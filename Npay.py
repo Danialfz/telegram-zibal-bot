@@ -28,12 +28,12 @@ def start_payment(message):
 
     res = requests.post("https://gateway.zibal.ir/v1/request", json=data).json()
 
-    if res["result"] == 100:
+    if res.get("result") == 100:
         track_id = res["trackId"]
         pay_url = f"https://gateway.zibal.ir/start/{track_id}"
         bot.send_message(message.chat.id, f"💰 برای پرداخت روی لینک زیر کلیک کن:\n{pay_url}")
     else:
-        bot.send_message(message.chat.id, f"❌ خطا در ایجاد تراکنش: {res['message']}")
+        bot.send_message(message.chat.id, f"❌ خطا در ایجاد تراکنش: {res.get('message', 'خطای نامشخص')}")
 
 # ---------- بررسی نتیجه پرداخت ----------
 @app.route('/verify')
@@ -42,25 +42,29 @@ def verify():
     data = {"merchant": MERCHANT, "trackId": track_id}
     result = requests.post("https://gateway.zibal.ir/v1/verify", json=data).json()
 
-    if result["result"] == 100:
+    if result.get("result") == 100:
         return "✅ پرداخت موفق بود!"
     else:
         return "❌ پرداخت ناموفق بود."
 
-# ✅ مسیر دریافت پیام‌های تلگرام (webhook)
+# ---------- مسیر دریافت پیام‌های تلگرام ----------
 @app.route('/' + BOT_TOKEN, methods=['POST'])
 def webhook():
-    json_str = request.get_data().decode('UTF-8')
-    update = telebot.types.Update.de_json(json_str)
-    bot.process_new_updates([update])
-    return "ok", 200
+    try:
+        json_str = request.get_data().decode('UTF-8')
+        update = telebot.types.Update.de_json(json_str)
+        bot.process_new_updates([update])
+        return "ok", 200
+    except Exception as e:
+        print("Webhook Error:", e)
+        return "error", 500
 
-# ✅ مسیر اصلی برای تست (GET /)
+# ---------- مسیر تست ساده ----------
 @app.route('/', methods=['GET'])
 def home():
     return "ربات فعال است ✅", 200
 
-# ---------- اجرا ----------
+# ---------- اجرا در حالت محلی ----------
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
