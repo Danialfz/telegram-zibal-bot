@@ -47,6 +47,9 @@ def verify():
         return "❌ پرداخت ناموفق بود."
 
 # ---------- اجرا ----------
-if __name__ == "__main__":
-    print("ربات و سرور محلی اجرا شدند 🚀")
-    app.run(port=5000)
+if __name__ == '__main__':
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
+
+
