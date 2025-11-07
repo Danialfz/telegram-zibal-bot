@@ -1,11 +1,12 @@
 import telebot
 from flask import Flask, request
 import requests
+import os
 
 # ---------- تنظیمات ----------
 BOT_TOKEN = "8589520464:AAE3x1LjHw0wWepIX6bJePQ_d0z9AXB-1t4"
 MERCHANT = "67fbd99f6f3803001057a0bf"
-CALLBACK_URL = "https://example.com/verify"  # بعداً آدرس ngrok جایگزین می‌شود
+CALLBACK_URL = "https://telegram-zibal-bot-production.up.railway.app/verify"  # ✅ لینک Railway
 
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
@@ -46,10 +47,20 @@ def verify():
     else:
         return "❌ پرداخت ناموفق بود."
 
+# ✅ اضافه شد: مسیر دریافت پیام‌های تلگرام
+@app.route('/' + BOT_TOKEN, methods=['POST'])
+def get_message():
+    json_str = request.get_data().decode('UTF-8')
+    update = telebot.types.Update.de_json(json_str)
+    bot.process_new_updates([update])
+    return "!", 200
+
+# ✅ اضافه شد: مسیر اصلی (فقط برای تست مرورگر)
+@app.route('/', methods=['GET'])
+def home():
+    return "ربات فعال است ✅"
+
 # ---------- اجرا ----------
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
-
-
