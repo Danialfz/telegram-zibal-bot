@@ -1,1 +1,1 @@
-web: python Npay.py
+web: gunicorn Npay:app
