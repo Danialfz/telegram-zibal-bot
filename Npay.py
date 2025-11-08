@@ -3,7 +3,7 @@ import telebot
 from telebot import types
 
 # ----------- تنظیمات -----------
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # از تنظیمات Railway یا .env خوانده می‌شود
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 MERCHANT = os.getenv("MERCHANT")
 
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -12,7 +12,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 @bot.message_handler(commands=['start'])
 def start(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    transfer_btn = types.KeyboardButton("💸 انتقال ارز به خارج و داخل کشور")
+    transfer_btn = types.KeyboardButton("💸 انتقال ارز")
     markup.add(transfer_btn)
     bot.send_message(
         message.chat.id,
@@ -21,14 +21,14 @@ def start(message):
     )
 
 # ----------- منوی انتقال ارز -----------
-@bot.message_handler(func=lambda message: message.text == "💸 انتقال ارز به خارج و داخل کشور")
+@bot.message_handler(func=lambda message: message.text == "💸 انتقال ارز")
 def transfer_menu(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    out_btn = types.KeyboardButton("🌍 انتقال ارز از داخل به خارج کشور")
-    in_btn = types.KeyboardButton("🏦 انتقال ارز از خارج به داخل کشور")
-    back_btn = types.KeyboardButton("🔙 بازگشت به منوی اصلی")
+    out_btn = types.KeyboardButton("🌍 از داخل به خارج")
+    in_btn = types.KeyboardButton("🏦 از خارج به داخل")
+    back_btn = types.KeyboardButton("🔙 منوی اصلی")
     markup.add(out_btn, in_btn, back_btn)
-    bot.send_message(message.chat.id, "لطفاً نوع انتقال را انتخاب کنید:", reply_markup=markup)
+    bot.send_message(message.chat.id, "نوع انتقال را انتخاب کنید:", reply_markup=markup)
 
 # ----------- منوی ارزها -----------
 currencies = {
@@ -49,7 +49,7 @@ currencies = {
     "QAR": "ریال قطر 🇶🇦"
 }
 
-@bot.message_handler(func=lambda message: message.text in ["🌍 انتقال ارز از داخل به خارج کشور", "🏦 انتقال ارز از خارج به داخل کشور"])
+@bot.message_handler(func=lambda message: message.text in ["🌍 از داخل به خارج", "🏦 از خارج به داخل"])
 def choose_currency(message):
     direction = "خارج" if "خارج" in message.text else "داخل"
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -58,16 +58,16 @@ def choose_currency(message):
     markup.add(types.KeyboardButton("🔙 بازگشت"))
     bot.send_message(
         message.chat.id,
-        f"نوع ارزی که می‌خواهید به {direction} منتقل کنید را انتخاب کنید:",
+        f"ارزی که می‌خواهید به {direction} منتقل کنید را انتخاب کنید:",
         reply_markup=markup
     )
 
 # ----------- بازگشت به منوی اصلی -----------
-@bot.message_handler(func=lambda message: message.text == "🔙 بازگشت" or message.text == "🔙 بازگشت به منوی اصلی")
+@bot.message_handler(func=lambda message: message.text in ["🔙 بازگشت", "🔙 منوی اصلی"])
 def back_to_main(message):
     start(message)
 
 # ----------- اجرای ربات -----------
 if __name__ == "__main__":
-    print("✅ ربات نوسان‌پی با polling در حال اجراست (فقط بخش انتقال ارز فعال است)...")
+    print("✅ ربات نوسان‌پی با polling در حال اجراست (بخش انتقال ارز فعال است)...")
     bot.infinity_polling(timeout=60, long_polling_timeout=30)
