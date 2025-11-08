@@ -15,4 +15,25 @@ def start(message):
 
 @bot.message_handler(commands=['pay'])
 def pay(message):
-    amount =
+    amount = 10000  # مبلغ تستی به تومان
+    callback_url = "https://zibal.ir"  # چون polling داریم، آدرس تأیید لازم نیست
+
+    data = {
+        "merchant": MERCHANT,
+        "amount": amount,
+        "callbackUrl": callback_url,
+        "description": f"پرداخت توسط کاربر {message.from_user.id}"
+    }
+
+    res = requests.post("https://gateway.zibal.ir/v1/request", json=data).json()
+    if res.get("result") == 100:
+        track_id = res.get("trackId")
+        pay_url = f"https://gateway.zibal.ir/start/{track_id}"
+        bot.send_message(message.chat.id, f"✅ تراکنش ایجاد شد.\nبرای پرداخت روی لینک زیر کلیک کن:\n{pay_url}")
+    else:
+        bot.send_message(message.chat.id, f"❌ خطا در ایجاد تراکنش: {res.get('message')}")
+
+# ----------- اجرای ربات -----------
+if __name__ == "__main__":
+    print("✅ ربات نوسان‌پی با polling در حال اجراست...")
+    bot.infinity_polling(timeout=60, long_polling_timeout=30)
