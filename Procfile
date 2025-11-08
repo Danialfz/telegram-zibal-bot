@@ -1,1 +1,1 @@
-web: gunicorn Npay:app
+worker: python Npay.py
