@@ -4,8 +4,8 @@ from telebot import types
 import requests
 
 # ----------- تنظیمات -----------
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8589520464:AAE3x1LjHw0wWepIX6bJePQ_d0z9AXB-1t4")
-MERCHANT = os.getenv("MERCHANT", "67fbd99f6f3803001057a0bf")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+MERCHANT = os.getenv("MERCHANT")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -153,3 +153,4 @@ def currency_selected(call):
 if __name__ == "__main__":
     print("✅ ربات نوسان‌پی با polling در حال اجراست...")
     bot.infinity_polling(timeout=60, long_polling_timeout=30)
+
