@@ -1,7 +1,9 @@
 import os
 import re
+import requests
 import telebot
 from telebot import types
+from bs4 import BeautifulSoup
 
 # ----------- تنظیمات -----------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -9,165 +11,139 @@ MERCHANT = os.getenv("MERCHANT")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ----------- لیست ارزها (کد => نام فارسی) -----------
+# ----------- لیست ارزها (کد => نام فارسی + کلید bonbast) -----------
 currencies = {
-    "USD": "دلار آمریکا 🇺🇸",
-    "EUR": "یورو 🇪🇺",
-    "GBP": "پوند انگلیس 🇬🇧",
-    "CHF": "فرانک سوئیس 🇨🇭",
-    "CAD": "دلار کانادا 🇨🇦",
-    "AUD": "دلار استرالیا 🇦🇺",
-    "AED": "درهم امارات 🇦🇪",
-    "TRY": "لیر ترکیه 🇹🇷",
-    "CNY": "یوان چین 🇨🇳",
-    "INR": "روپیه هند 🇮🇳",
-    "JPY": "ین ژاپن 🇯🇵",
-    "SAR": "ریال عربستان 🇸🇦",
-    "KWD": "دینار کویت 🇰🇼",
-    "OMR": "ریال عمان 🇴🇲",
-    "QAR": "ریال قطر 🇶🇦"
+    "USD": {"name": "دلار آمریکا 🇺🇸", "key": "usd"},
+    "EUR": {"name": "یورو 🇪🇺", "key": "eur"},
+    "GBP": {"name": "پوند انگلیس 🇬🇧", "key": "gbp"},
+    "CHF": {"name": "فرانک سوئیس 🇨🇭", "key": "chf"},
+    "CAD": {"name": "دلار کانادا 🇨🇦", "key": "cad"},
+    "AUD": {"name": "دلار استرالیا 🇦🇺", "key": "aud"},
+    "AED": {"name": "درهم امارات 🇦🇪", "key": "aed"},
+    "TRY": {"name": "لیر ترکیه 🇹🇷", "key": "try"},
+    "CNY": {"name": "یوان چین 🇨🇳", "key": "cny"},
+    "INR": {"name": "روپیه هند 🇮🇳", "key": "inr"},
+    "JPY": {"name": "ین ژاپن 🇯🇵", "key": "jpy"},
+    "SAR": {"name": "ریال عربستان 🇸🇦", "key": "sar"},
+    "KWD": {"name": "دینار کویت 🇰🇼", "key": "kwd"},
+    "OMR": {"name": "ریال عمان 🇴🇲", "key": "omr"},
+    "QAR": {"name": "ریال قطر 🇶🇦", "key": "qar"}
 }
 
-# ----------- ذخیره وضعیت موقت کاربران (در حافظه) -----------
-# ساختار: pending[chat_id] = {"direction": "داخل"|"خارج", "currency": "USD", "awaiting": "amount"}
+# ----------- وضعیت کاربران -----------
 pending = {}
 
-# ----------- منوی اصلی خلاصه -----------
+# ----------- تابع دریافت نرخ ارز از bonbast.com -----------
+def get_rate_from_bonbast(currency_key):
+    """
+    currency_key مثل 'usd' یا 'eur'
+    خروجی: نرخ فروش به تومان (int)
+    """
+    try:
+        url = "https://www.bon-bast.com/"
+        res = requests.get(url, timeout=10)
+        res.raise_for_status()
+        soup = BeautifulSoup(res.text, "html.parser")
+        rate_tag = soup.find("span", {"id": f"ctl00_cphMain_lbl{currency_key.upper()}"})
+        if rate_tag:
+            # حذف ویرگول و فاصله
+            rate_str = rate_tag.text.strip().replace(",", "")
+            return int(rate_str)
+    except Exception as e:
+        print(f"❌ خطا در دریافت نرخ {currency_key}: {e}")
+    return None
+
+# ----------- منوی اصلی -----------
 @bot.message_handler(commands=['start'])
 def start(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    transfer_btn = types.KeyboardButton("💸 انتقال ارز")
-    markup.add(transfer_btn)
-    bot.send_message(
-        message.chat.id,
-        "سلام 👋 به ربات نوسان‌پی خوش‌آمدید.\nبرای شروع «💸 انتقال ارز» را انتخاب کنید.",
-        reply_markup=markup
-    )
+    markup.add(types.KeyboardButton("💸 انتقال ارز"))
+    bot.send_message(message.chat.id,
+                     "سلام 👋 به ربات نوسان‌پی خوش‌آمدید.\nبرای شروع «💸 انتقال ارز» را انتخاب کنید.",
+                     reply_markup=markup)
 
-# ----------- منوی انتقال خلاصه -----------
+# ----------- انتخاب نوع انتقال -----------
 @bot.message_handler(func=lambda m: m.text == "💸 انتقال ارز")
 def transfer_menu(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    out_btn = types.KeyboardButton("🌍 از داخل به خارج")
-    in_btn = types.KeyboardButton("🏦 از خارج به داخل")
-    markup.add(out_btn, in_btn)
+    markup.add(types.KeyboardButton("🌍 از داخل به خارج"),
+               types.KeyboardButton("🏦 از خارج به داخل"))
     bot.send_message(message.chat.id, "لطفاً نوع انتقال را انتخاب کنید:", reply_markup=markup)
 
-# ----------- نمایش فهرست ارزها (پس از انتخاب جهت) -----------
+# ----------- نمایش فهرست ارزها -----------
 @bot.message_handler(func=lambda m: m.text in ["🌍 از داخل به خارج", "🏦 از خارج به داخل"])
 def show_currencies(message):
     direction = "داخل" if "داخل" in message.text else "خارج"
     chat_id = message.chat.id
-    # ذخیره جهت در pending
-    pending[chat_id] = {"direction": direction, "currency": None, "awaiting": None}
+    pending[chat_id] = {"direction": direction, "awaiting": None, "currency": None}
 
-    # کلیدهای ارزها (کوتاه: "دلار آمریکا (USD)")
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    for code, name in currencies.items():
-        markup.add(types.KeyboardButton(f"{name} ({code})"))
+    for code, info in currencies.items():
+        markup.add(types.KeyboardButton(f"{info['name']} ({code})"))
     markup.add(types.KeyboardButton("🔙 منوی اصلی"))
-    bot.send_message(chat_id, f"نوع ارز برای انتقال ({'از داخل به خارج' if direction=='داخل' else 'از خارج به داخل'}) را انتخاب کنید:", reply_markup=markup)
+    bot.send_message(chat_id,
+                     f"نوع ارز برای انتقال ({'از داخل به خارج' if direction=='داخل' else 'از خارج به داخل'}) را انتخاب کنید:",
+                     reply_markup=markup)
 
-# ----------- وقتی کاربر ارز را انتخاب کرد: بپرس "چه مقدار؟" -----------
+# ----------- دریافت نوع ارز و درخواست مقدار -----------
 @bot.message_handler(func=lambda m: bool(re.match(r".*\([A-Z]{3}\)\s*$", m.text or "")))
 def ask_amount(message):
     chat_id = message.chat.id
-    text = message.text.strip()
-    # استخراج کد ارز از انتهای رشته "(USD)"
-    m = re.search(r"\(([A-Z]{3})\)\s*$", text)
-    if not m:
-        bot.reply_to(message, "لطفاً ارز را با فرمت پیشنهادی (مثلاً: دلار آمریکا (USD)) انتخاب کنید.")
-        return
+    match = re.search(r"\(([A-Z]{3})\)\s*$", message.text)
+    if not match:
+        return bot.reply_to(message, "لطفاً ارز را با فرمت صحیح انتخاب کنید.")
 
-    code = m.group(1)
+    code = match.group(1)
     if code not in currencies:
-        bot.reply_to(message, "این ارز در فهرست موجود نیست. لطفاً مجدداً انتخاب کنید.")
-        return
+        return bot.reply_to(message, "این ارز در فهرست موجود نیست.")
 
-    # ذخیره انتخاب کاربر و علامت‌گذاری که منتظر مقدار هستیم
-    pending[chat_id] = {
-        "direction": pending.get(chat_id, {}).get("direction", None),
-        "currency": code,
-        "awaiting": "amount"
-    }
+    pending[chat_id].update({"currency": code, "awaiting": "amount"})
 
-    # پرسش رسمی مقدار
     bot.send_message(chat_id,
-                     f"شما ارز «{currencies[code]} ({code})» را انتخاب کردید.\n\n"
-                     "لطفاً مقدار مورد نظر را به عدد وارد کنید (مثال: 2500 یا 12.5).\n\n"
-                     "توجه: فقط عدد وارد کنید؛ واحد را تکرار نکنید.",
+                     f"شما ارز «{currencies[code]['name']} ({code})» را انتخاب کردید.\n\n"
+                     "لطفاً مقدار مورد نظر را به عدد وارد کنید (مثلاً 2500 یا 12.5):",
                      reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton("🔙 منوی اصلی")))
 
-# ----------- دریافت مقدار از کاربر و نمایش تأیید -----------
+# ----------- دریافت مقدار و نمایش معادل ریالی -----------
 @bot.message_handler(func=lambda m: True)
-def receive_amount_and_confirm(message):
+def get_amount(message):
     chat_id = message.chat.id
-    user_state = pending.get(chat_id)
+    state = pending.get(chat_id)
     text = (message.text or "").strip()
 
-    # اگر کاربر در حالت انتظار مقدار باشد
-    if user_state and user_state.get("awaiting") == "amount":
-        # بررسی عددی بودن ورودی (ممکنه کاما داشته باشه)
-        normalized = text.replace(",", "").replace(" ", "")
-        try:
-            amount = float(normalized)
-            if amount <= 0:
-                raise ValueError("مقدار باید مثبت باشد.")
-        except Exception:
-            bot.reply_to(message, "⚠️ مقدار نامعتبر است. لطفاً فقط عدد مثبت وارد کنید، مثلاً: 2500 یا 12.5")
-            return
-
-        # ذخیره مقدار و رفتن به مرحله‌ی تأیید
-        pending[chat_id]["amount"] = amount
-        pending[chat_id]["awaiting"] = "confirm"
-
-        currency_code = pending[chat_id]["currency"]
-        currency_name = currencies.get(currency_code, currency_code)
-
-        # پیام رسمی تأیید (قابلیت اضافه کردن نرخ ریالی بعداً)
-        confirm_markup = types.InlineKeyboardMarkup()
-        confirm_markup.add(types.InlineKeyboardButton("✅ تأیید و ادامه", callback_data="confirm_transfer"))
-        confirm_markup.add(types.InlineKeyboardButton("❌ لغو و بازگشت", callback_data="cancel_transfer"))
-
-        bot.send_message(chat_id,
-                         f"📌 لطفاً اطلاعات زیر را بررسی کنید:\n\n"
-                         f"• نوع انتقال: {pending[chat_id].get('direction','-')}\n"
-                         f"• ارز: {currency_name} ({currency_code})\n"
-                         f"• مقدار: {amount}\n\n"
-                         "آیا مایل به ادامه هستید؟",
-                         reply_markup=confirm_markup)
+    if not state or state.get("awaiting") != "amount":
+        if text == "🔙 منوی اصلی" or text == "/start":
+            return start(message)
         return
 
-    # اگر کاربر در حالت دیگری بود یا متن آزاد فرستاد
-    # اگر خواسته بازگشت کنه به منوی اصلی
-    if text == "🔙 منوی اصلی" or text == "/start":
-        return start(message)
+    try:
+        amount = float(text.replace(",", "").replace(" ", ""))
+        if amount <= 0:
+            raise ValueError()
+    except:
+        return bot.reply_to(message, "⚠️ مقدار نامعتبر است. لطفاً عدد مثبت وارد کنید.")
 
-    # پیام پیش‌فرض برای متن‌های نامرتبط
-    bot.reply_to(message, "اگر می‌خواهید انتقال ارز انجام دهید، ابتدا از منوی اصلی «💸 انتقال ارز» را انتخاب کنید.")
+    code = state["currency"]
+    currency_info = currencies[code]
+    rate = get_rate_from_bonbast(currency_info["key"])
 
-# ----------- هندل کردن تأیید / لغو از طریق کال‌بک -----------
-@bot.callback_query_handler(func=lambda call: call.data in ["confirm_transfer", "cancel_transfer"])
-def handle_confirm_cancel(call):
-    chat_id = call.message.chat.id
-    if call.data == "confirm_transfer":
-        state = pending.get(chat_id)
-        if not state:
-            bot.answer_callback_query(call.id, "هیچ درخواستی برای تأیید وجود ندارد.")
-            return
-        # اینجا مرحلهٔ بعد (محاسبه ریالی، ایجاد سفارش، ارسال لینک پرداخت و...) انجام می‌شود.
-        # فعلاً فقط پیام رسمی ارسال می‌کنیم.
-        bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id,
-                              text="✅ درخواست شما ثبت اولیه شد.\nما در مرحله بعدی معادل ریالی را محاسبه و برای شما ارسال خواهیم کرد.")
-        # پاک کردن pending یا می‌توان نگه داشت برای مراحل بعدی
-        pending.pop(chat_id, None)
+    if not rate:
+        return bot.send_message(chat_id, "❌ خطا در دریافت نرخ ارز. لطفاً دوباره تلاش کنید.")
 
-    elif call.data == "cancel_transfer":
-        bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id,
-                              text="❌ درخواست شما لغو شد. برای شروع مجدد از منوی اصلی استفاده کنید.")
-        pending.pop(chat_id, None)
+    rial_value = amount * rate
+    toman_value = rial_value / 10  # تبدیل به تومان
+
+    bot.send_message(chat_id,
+                     f"💱 معادل مبلغ واردشده:\n\n"
+                     f"• مقدار: {amount} {currency_info['name']} ({code})\n"
+                     f"• نرخ هر واحد: {rate:,} ریال\n"
+                     f"• معادل کل: {int(rial_value):,} ریال ≈ {int(toman_value):,} تومان\n\n"
+                     "آیا مایل به ادامه و ثبت نهایی هستید؟ (فعلاً این بخش تستی است.)")
+
+    # پاک کردن وضعیت
+    pending.pop(chat_id, None)
 
 # ----------- اجرای ربات -----------
 if __name__ == "__main__":
-    print("✅ ربات نوسان‌پی با polling در حال اجراست...")
+    print("✅ ربات نوسان‌پی با polling در حال اجراست و نرخ لحظه‌ای از bonbast دریافت می‌کند...")
     bot.infinity_polling(timeout=60, long_polling_timeout=30)
