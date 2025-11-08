@@ -15,24 +15,24 @@ try:
 except:
     pass
 
-# ----------- ارزها (فقط نام و معادل فارسی) -----------
+# ----------- لیست ارزها با نام فارسی -----------
 currencies = {
-    "USD": "دلار آمریکا",
-    "EUR": "یورو",
-    "GBP": "پوند انگلیس",
-    "CHF": "فرانک سوئیس",
-    "CAD": "دلار کانادا",
-    "AUD": "دلار استرالیا",
-    "SEK": "کرون سوئد",
-    "NOK": "کرون نروژ",
-    "RUB": "روبل روسیه",
-    "THB": "بات تایلند",
-    "SGD": "دلار سنگاپور",
-    "HKD": "دلار هنگ‌کنگ",
-    "INR": "روپیه هند",
-    "TRY": "لیر ترکیه",
-    "CNY": "یوان چین",
-    "SAR": "ریال سعودی"
+    "USD": "دلار آمریکا 🇺🇸",
+    "EUR": "یورو 🇪🇺",
+    "GBP": "پوند انگلیس 🇬🇧",
+    "CHF": "فرانک سوئیس 🇨🇭",
+    "CAD": "دلار کانادا 🇨🇦",
+    "AUD": "دلار استرالیا 🇦🇺",
+    "SEK": "کرون سوئد 🇸🇪",
+    "NOK": "کرون نروژ 🇳🇴",
+    "RUB": "روبل روسیه 🇷🇺",
+    "THB": "بات تایلند 🇹🇭",
+    "SGD": "دلار سنگاپور 🇸🇬",
+    "HKD": "دلار هنگ‌کنگ 🇭🇰",
+    "INR": "روپیه هند 🇮🇳",
+    "TRY": "لیر ترکیه 🇹🇷",
+    "CNY": "یوان چین 🇨🇳",
+    "SAR": "ریال سعودی 🇸🇦"
 }
 
 # ----------- شروع ربات -----------
@@ -46,10 +46,11 @@ def start(message):
         types.KeyboardButton("انتقال ارز")
     )
     bot.send_message(message.chat.id,
-                     "سلام 👋 به ربات نوسان‌پی خوش اومدی.\nلطفاً یکی از گزینه‌های زیر رو انتخاب کن:",
+                     "سلام 👋 به ربات نوسان‌پی خوش اومدی.\nیکی از گزینه‌ها رو انتخاب کن:",
                      reply_markup=markup)
 
-# ----------- بخش 1: ثبت سایر سفارش‌ها -----------
+# ----------- بخش‌های اصلی دیگر (بدون تغییر) -----------
+
 @bot.message_handler(func=lambda message: message.text == "ثبت سایر سفارش‌ها")
 def others(message):
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -72,17 +73,15 @@ def others(message):
     ]
     for text, data in buttons:
         markup.add(types.InlineKeyboardButton(text, callback_data=data))
-    bot.send_message(message.chat.id, "📦 لطفاً نوع سفارش خود را انتخاب کنید:", reply_markup=markup)
+    bot.send_message(message.chat.id, "📦 نوع سفارش خود را انتخاب کنید:", reply_markup=markup)
 
-# ----------- بخش 2: آزمون‌ها -----------
 @bot.message_handler(func=lambda message: message.text == "آزمون‌ها")
 def exams(message):
     markup = types.InlineKeyboardMarkup(row_width=2)
-    buttons = [
-        ("سایر", "exam_other"),
+    exams_list = [
         ("CFA", "cfa"),
         ("آیلتس (IELTS)", "ielts"),
-        ("عضویت ACCA", "acca"),
+        ("ACCA", "acca"),
         ("USMLE", "usmle"),
         ("PMP", "pmp"),
         ("IMAT", "imat"),
@@ -95,11 +94,10 @@ def exams(message):
         ("GMAT", "gmat"),
         ("Duolingo", "duolingo")
     ]
-    for text, data in buttons:
+    for text, data in exams_list:
         markup.add(types.InlineKeyboardButton(text, callback_data=data))
     bot.send_message(message.chat.id, "🧾 لطفاً آزمون مورد نظر را انتخاب کنید:", reply_markup=markup)
 
-# ----------- بخش 3: هزینه اپلای -----------
 @bot.message_handler(func=lambda message: message.text == "هزینه اپلای")
 def apply_costs(message):
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -116,28 +114,40 @@ def apply_costs(message):
         ("ارزیابی مهندسین استرالیا", "engineer_australia"),
         ("تمدید عضویت PMI", "pmi"),
         ("حق عضویت APEGS", "apegs"),
-        ("ارزیابی مدارک پزشکی استرالیا (AMC)", "amc"),
+        ("ارزیابی مدارک پزشکی (AMC)", "amc"),
         ("پرداخت اداره بهداشت دبی (DHA)", "dha")
     ]
     for text, data in buttons:
         markup.add(types.InlineKeyboardButton(text, callback_data=data))
     bot.send_message(message.chat.id, "🎓 لطفاً نوع هزینه اپلای را انتخاب کنید:", reply_markup=markup)
 
-# ----------- بخش 4: انتقال ارز -----------
+# ----------- بخش انتقال ارز -----------
 @bot.message_handler(func=lambda message: message.text == "انتقال ارز")
 def transfer(message):
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
-        types.InlineKeyboardButton("داخل به خارج", callback_data="transfer_out"),
-        types.InlineKeyboardButton("خارج به داخل", callback_data="transfer_in")
+        types.InlineKeyboardButton("داخل به خارج 🌍", callback_data="transfer_out"),
+        types.InlineKeyboardButton("خارج به داخل 💵", callback_data="transfer_in")
     )
-    bot.send_message(message.chat.id, "💱 لطفاً نوع انتقال ارز را انتخاب کنید:", reply_markup=markup)
+    bot.send_message(message.chat.id, "💱 نوع انتقال ارز را انتخاب کنید:", reply_markup=markup)
 
-# ----------- پاسخ به کلیک‌ها -----------
-@bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    bot.answer_callback_query(call.id, f"✅ {call.data} انتخاب شد.")
-    bot.send_message(call.message.chat.id, f"شما گزینه‌ی «{call.data}» را انتخاب کردید ✅")
+# ----------- وقتی یکی از دو حالت انتخاب شد، ارزها نمایش داده می‌شوند -----------
+@bot.callback_query_handler(func=lambda call: call.data in ["transfer_out", "transfer_in"])
+def show_currencies(call):
+    direction = "داخل به خارج" if call.data == "transfer_out" else "خارج به داخل"
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    for code, name in currencies.items():
+        markup.add(types.InlineKeyboardButton(f"{code} — {name}", callback_data=f"{call.data}_{code}"))
+    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
+                          text=f"🌐 نوع انتقال: {direction}\nلطفاً ارز مورد نظر را انتخاب کنید:",
+                          reply_markup=markup)
+
+# ----------- پاسخ به انتخاب ارز -----------
+@bot.callback_query_handler(func=lambda call: "transfer_out_" in call.data or "transfer_in_" in call.data)
+def currency_selected(call):
+    code = call.data.split("_")[-1]
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, f"✅ شما ارز {currencies[code]} ({code}) را انتخاب کردید.")
 
 # ----------- اجرای ربات -----------
 if __name__ == "__main__":
