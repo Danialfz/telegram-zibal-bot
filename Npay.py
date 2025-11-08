@@ -52,49 +52,37 @@ def save_cache(cache):
     except Exception as e:
         print("⚠️ couldn't save cache:", e)
 
-# ---------------- گرفتن نرخ از API رایگان (exchangerate.host) ----------------
+# ---------------- گرفتن نرخ از API رایگان ----------------
 BASE_URL = "https://api.exchangerate.host/convert"
 
 def fetch_rate_api(from_code: str, to_code: str = "IRR"):
-    """
-    فراخوانی رایگان برای تبدیل 1 واحد from_code به IRR (ریال).
-    خروجی: نرخ (float) یا None در صورت خطا.
-    """
     try:
         params = {"from": from_code.upper(), "to": to_code.upper(), "amount": 1}
         headers = {"User-Agent": "Mozilla/5.0 (compatible; NpayBot/1.0)"}
         r = requests.get(BASE_URL, params=params, headers=headers, timeout=8)
         r.raise_for_status()
         data = r.json()
-        # اگر مقدار result موجود باشد، مقدار تبدیل شده بر حسب IRR برمی‌گردد
         if isinstance(data, dict):
             if "result" in data and data["result"] is not None:
                 return float(data["result"])
             if "info" in data and isinstance(data["info"], dict) and "rate" in data["info"]:
-                # rate در info ممکن است موجود باشد (برای amount=1 همان نرخ است)
                 return float(data["info"]["rate"])
     except Exception as e:
         print("❌ fetch_rate_api error:", e)
     return None
 
 def get_rate(from_code: str):
-    """
-    نرخ هر واحد from_code را به IRR برمی‌گرداند.
-    خروجی: (rate: float or None, from_cache: bool, age_seconds: int or None)
-    """
     from_code = from_code.upper()
     cache = load_cache()
     key = f"{from_code}_IRR"
     now = int(time.time())
 
-    # استفاده از کش در صورت تازه بودن
     if key in cache:
         entry = cache[key]
         age = now - entry.get("ts", 0)
         if age <= CACHE_TTL and entry.get("rate") is not None:
             return entry["rate"], True, age
 
-    # تلاش برای دریافت از API
     rate = fetch_rate_api(from_code, "IRR")
     if rate is not None:
         cache[key] = {"rate": rate, "ts": now}
@@ -104,16 +92,14 @@ def get_rate(from_code: str):
             pass
         return rate, False, 0
 
-    # در صورت شکست API، اگر کش قدیمی موجود است از آن استفاده کن
     if key in cache and cache[key].get("rate") is not None:
         entry = cache[key]
         age = now - entry.get("ts", 0)
         return entry["rate"], True, age
 
-    # هیچ داده‌ای موجود نیست
     return None, False, None
 
-# ---------------- منوها و جریان کاربری (همان کد قبلی با تغییرات محاسبه) ----------------
+# ---------------- منوها ----------------
 @bot.message_handler(commands=['start'])
 def start(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -163,16 +149,27 @@ def ask_amount(message):
         "awaiting": "amount"
     }
 
+    back_btn = types.KeyboardButton("🔙 منوی اصلی")
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(back_btn)
+
     bot.send_message(chat_id,
                      f"شما ارز «{currencies[code]} ({code})» را انتخاب کردید.\n"
                      "لطفاً مقدار مورد نظر را به عدد وارد کنید (مثال: 2500 یا 12.5).",
-                     reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton("🔙 منوی اصلی")))
+                     reply_markup=markup)
 
+# ---------------- دریافت مقدار و محاسبه ----------------
 @bot.message_handler(func=lambda m: True)
 def receive_amount(message):
     chat_id = message.chat.id
-    state = pending.get(chat_id)
     text = (message.text or "").strip()
+
+    # ✅ اگر کاربر خواست برگرده به منوی اصلی، در هر حالت برگرد
+    if text in ["🔙 منوی اصلی", "/start"]:
+        pending.pop(chat_id, None)
+        return start(message)
+
+    state = pending.get(chat_id)
 
     if state and state.get("awaiting") == "amount":
         normalized = text.replace(",", "").replace(" ", "")
@@ -185,14 +182,12 @@ def receive_amount(message):
             return
 
         currency_code = state["currency"]
-        # گرفتن نرخ (بر حسب ریال IRR) با کش و fallback
         rate, from_cache, age = get_rate(currency_code)
 
         if rate is None:
             bot.send_message(chat_id, "❌ متأسفانه نرخ ارز فعلاً در دسترس نیست. لطفاً کمی بعد تلاش کنید.")
             return
 
-        # rate بر حسب ریال است. تبدیل به تومان:
         toman_per_unit = rate / 10.0
         total_toman = amount * toman_per_unit
 
@@ -204,7 +199,6 @@ def receive_amount(message):
             else:
                 note = "\n(نرخ از کش استفاده شد)"
 
-        # ارسال نتیجه (بدون اشاره به منبع)
         bot.send_message(
             chat_id,
             f"💰 معادل مبلغ واردشده:\n\n"
@@ -216,9 +210,6 @@ def receive_amount(message):
 
         pending.pop(chat_id, None)
         return
-
-    if text == "🔙 منوی اصلی" or text == "/start":
-        return start(message)
 
     bot.reply_to(message, "برای انتقال ارز، ابتدا از منوی اصلی «💸 انتقال ارز» را انتخاب کنید.")
 
