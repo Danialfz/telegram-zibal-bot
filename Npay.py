@@ -1,149 +1,168 @@
 import os
 import re
 import requests
+from bs4 import BeautifulSoup
 import telebot
 from telebot import types
-from bs4 import BeautifulSoup
 
-# ----------- تنظیمات -----------
+# ---------------- تنظیمات ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 MERCHANT = os.getenv("MERCHANT")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ----------- لیست ارزها (کد => نام فارسی + کلید bonbast) -----------
+# ---------------- فهرست ارزها ----------------
 currencies = {
-    "USD": {"name": "دلار آمریکا 🇺🇸", "key": "usd"},
-    "EUR": {"name": "یورو 🇪🇺", "key": "eur"},
-    "GBP": {"name": "پوند انگلیس 🇬🇧", "key": "gbp"},
-    "CHF": {"name": "فرانک سوئیس 🇨🇭", "key": "chf"},
-    "CAD": {"name": "دلار کانادا 🇨🇦", "key": "cad"},
-    "AUD": {"name": "دلار استرالیا 🇦🇺", "key": "aud"},
-    "AED": {"name": "درهم امارات 🇦🇪", "key": "aed"},
-    "TRY": {"name": "لیر ترکیه 🇹🇷", "key": "try"},
-    "CNY": {"name": "یوان چین 🇨🇳", "key": "cny"},
-    "INR": {"name": "روپیه هند 🇮🇳", "key": "inr"},
-    "JPY": {"name": "ین ژاپن 🇯🇵", "key": "jpy"},
-    "SAR": {"name": "ریال عربستان 🇸🇦", "key": "sar"},
-    "KWD": {"name": "دینار کویت 🇰🇼", "key": "kwd"},
-    "OMR": {"name": "ریال عمان 🇴🇲", "key": "omr"},
-    "QAR": {"name": "ریال قطر 🇶🇦", "key": "qar"}
+    "USD": "دلار آمریکا 🇺🇸",
+    "EUR": "یورو 🇪🇺",
+    "GBP": "پوند انگلیس 🇬🇧",
+    "CHF": "فرانک سوئیس 🇨🇭",
+    "CAD": "دلار کانادا 🇨🇦",
+    "AUD": "دلار استرالیا 🇦🇺",
+    "AED": "درهم امارات 🇦🇪",
+    "TRY": "لیر ترکیه 🇹🇷",
+    "CNY": "یوان چین 🇨🇳",
+    "INR": "روپیه هند 🇮🇳",
+    "JPY": "ین ژاپن 🇯🇵",
+    "SAR": "ریال عربستان 🇸🇦",
+    "KWD": "دینار کویت 🇰🇼",
+    "OMR": "ریال عمان 🇴🇲",
+    "QAR": "ریال قطر 🇶🇦"
 }
 
-# ----------- وضعیت کاربران -----------
+# ---------------- وضعیت موقت کاربران ----------------
 pending = {}
 
-# ----------- تابع دریافت نرخ ارز از bonbast.com -----------
-def get_rate_from_bonbast(currency_key):
+# ---------------- تابع دریافت نرخ ارز از Bonbast ----------------
+def fetch_currency_rate(code: str):
     """
-    currency_key مثل 'usd' یا 'eur'
-    خروجی: نرخ فروش به تومان (int)
+    نرخ فروش ارز را از سایت bonbast.com به تومان می‌خواند.
     """
     try:
-        url = "https://www.bon-bast.com/"
-        res = requests.get(url, timeout=10)
-        res.raise_for_status()
-        soup = BeautifulSoup(res.text, "html.parser")
-        rate_tag = soup.find("span", {"id": f"ctl00_cphMain_lbl{currency_key.upper()}"})
-        if rate_tag:
-            # حذف ویرگول و فاصله
-            rate_str = rate_tag.text.strip().replace(",", "")
-            return int(rate_str)
-    except Exception as e:
-        print(f"❌ خطا در دریافت نرخ {currency_key}: {e}")
-    return None
+        url = "https://bonbast.com/"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        resp = requests.get(url, headers=headers, timeout=10)
 
-# ----------- منوی اصلی -----------
+        if resp.status_code != 200:
+            return None
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # جستجوی جدول ارزها
+        rows = soup.find_all("tr")
+        for row in rows:
+            cols = [c.get_text(strip=True) for c in row.find_all("td")]
+            if len(cols) >= 3 and cols[0].strip().upper().startswith(code.upper()):
+                sell_price = cols[1].replace(",", "").replace("٬", "")
+                return float(sell_price)
+
+        return None
+
+    except Exception as e:
+        print(f"❌ Error fetching rate for {code}: {e}")
+        return None
+
+# ---------------- شروع ----------------
 @bot.message_handler(commands=['start'])
 def start(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(types.KeyboardButton("💸 انتقال ارز"))
-    bot.send_message(message.chat.id,
-                     "سلام 👋 به ربات نوسان‌پی خوش‌آمدید.\nبرای شروع «💸 انتقال ارز» را انتخاب کنید.",
-                     reply_markup=markup)
+    transfer_btn = types.KeyboardButton("💸 انتقال ارز")
+    markup.add(transfer_btn)
+    bot.send_message(
+        message.chat.id,
+        "سلام 👋 به ربات نوسان‌پی خوش‌آمدید.\nبرای شروع «💸 انتقال ارز» را انتخاب کنید.",
+        reply_markup=markup
+    )
 
-# ----------- انتخاب نوع انتقال -----------
+# ---------------- منوی انتقال ----------------
 @bot.message_handler(func=lambda m: m.text == "💸 انتقال ارز")
 def transfer_menu(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(types.KeyboardButton("🌍 از داخل به خارج"),
-               types.KeyboardButton("🏦 از خارج به داخل"))
+    markup.add(
+        types.KeyboardButton("🌍 از داخل به خارج"),
+        types.KeyboardButton("🏦 از خارج به داخل")
+    )
     bot.send_message(message.chat.id, "لطفاً نوع انتقال را انتخاب کنید:", reply_markup=markup)
 
-# ----------- نمایش فهرست ارزها -----------
+# ---------------- انتخاب ارز ----------------
 @bot.message_handler(func=lambda m: m.text in ["🌍 از داخل به خارج", "🏦 از خارج به داخل"])
 def show_currencies(message):
     direction = "داخل" if "داخل" in message.text else "خارج"
     chat_id = message.chat.id
-    pending[chat_id] = {"direction": direction, "awaiting": None, "currency": None}
+    pending[chat_id] = {"direction": direction, "currency": None, "awaiting": None}
 
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    for code, info in currencies.items():
-        markup.add(types.KeyboardButton(f"{info['name']} ({code})"))
+    for code, name in currencies.items():
+        markup.add(types.KeyboardButton(f"{name} ({code})"))
     markup.add(types.KeyboardButton("🔙 منوی اصلی"))
-    bot.send_message(chat_id,
-                     f"نوع ارز برای انتقال ({'از داخل به خارج' if direction=='داخل' else 'از خارج به داخل'}) را انتخاب کنید:",
-                     reply_markup=markup)
+    bot.send_message(chat_id, f"نوع ارز مورد نظر برای انتقال ({'از داخل به خارج' if direction=='داخل' else 'از خارج به داخل'}) را انتخاب کنید:", reply_markup=markup)
 
-# ----------- دریافت نوع ارز و درخواست مقدار -----------
+# ---------------- وقتی ارز انتخاب شد ----------------
 @bot.message_handler(func=lambda m: bool(re.match(r".*\([A-Z]{3}\)\s*$", m.text or "")))
 def ask_amount(message):
     chat_id = message.chat.id
-    match = re.search(r"\(([A-Z]{3})\)\s*$", message.text)
+    match = re.search(r"\(([A-Z]{3})\)\s*$", message.text.strip())
     if not match:
-        return bot.reply_to(message, "لطفاً ارز را با فرمت صحیح انتخاب کنید.")
+        bot.reply_to(message, "لطفاً ارز را با فرمت صحیح انتخاب کنید (مثلاً: دلار آمریکا (USD)).")
+        return
 
     code = match.group(1)
     if code not in currencies:
-        return bot.reply_to(message, "این ارز در فهرست موجود نیست.")
+        bot.reply_to(message, "این ارز در فهرست نیست، لطفاً مجدداً انتخاب کنید.")
+        return
 
-    pending[chat_id].update({"currency": code, "awaiting": "amount"})
+    pending[chat_id] = {
+        "direction": pending.get(chat_id, {}).get("direction", None),
+        "currency": code,
+        "awaiting": "amount"
+    }
 
     bot.send_message(chat_id,
-                     f"شما ارز «{currencies[code]['name']} ({code})» را انتخاب کردید.\n\n"
-                     "لطفاً مقدار مورد نظر را به عدد وارد کنید (مثلاً 2500 یا 12.5):",
+                     f"شما ارز «{currencies[code]} ({code})» را انتخاب کردید.\n"
+                     "لطفاً مقدار مورد نظر را به عدد وارد کنید (مثال: 2500 یا 12.5).",
                      reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add(types.KeyboardButton("🔙 منوی اصلی")))
 
-# ----------- دریافت مقدار و نمایش معادل ریالی -----------
+# ---------------- دریافت مقدار ----------------
 @bot.message_handler(func=lambda m: True)
-def get_amount(message):
+def receive_amount(message):
     chat_id = message.chat.id
     state = pending.get(chat_id)
     text = (message.text or "").strip()
 
-    if not state or state.get("awaiting") != "amount":
-        if text == "🔙 منوی اصلی" or text == "/start":
-            return start(message)
+    if state and state.get("awaiting") == "amount":
+        normalized = text.replace(",", "").replace(" ", "")
+        try:
+            amount = float(normalized)
+            if amount <= 0:
+                raise ValueError()
+        except Exception:
+            bot.reply_to(message, "⚠️ لطفاً فقط عدد مثبت وارد کنید (مثلاً: 2500 یا 12.5)")
+            return
+
+        currency_code = state["currency"]
+        rate = fetch_currency_rate(currency_code)
+
+        if not rate:
+            bot.send_message(chat_id, "❌ خطا در دریافت قیمت ارز از Bonbast. لطفاً بعداً دوباره تلاش کنید.")
+            return
+
+        total_toman = amount * rate
+        bot.send_message(
+            chat_id,
+            f"💰 نرخ فعلی {currencies[currency_code]}: {rate:,.0f} تومان\n"
+            f"📦 مبلغ کل برای {amount} واحد: {total_toman:,.0f} تومان\n\n"
+            "✅ درخواست شما ثبت شد و به مرحله بعد منتقل می‌شود."
+        )
+
+        pending.pop(chat_id, None)
         return
 
-    try:
-        amount = float(text.replace(",", "").replace(" ", ""))
-        if amount <= 0:
-            raise ValueError()
-    except:
-        return bot.reply_to(message, "⚠️ مقدار نامعتبر است. لطفاً عدد مثبت وارد کنید.")
+    if text == "🔙 منوی اصلی" or text == "/start":
+        return start(message)
 
-    code = state["currency"]
-    currency_info = currencies[code]
-    rate = get_rate_from_bonbast(currency_info["key"])
+    bot.reply_to(message, "برای انتقال ارز، از منوی اصلی «💸 انتقال ارز» را انتخاب کنید.")
 
-    if not rate:
-        return bot.send_message(chat_id, "❌ خطا در دریافت نرخ ارز. لطفاً دوباره تلاش کنید.")
-
-    rial_value = amount * rate
-    toman_value = rial_value / 10  # تبدیل به تومان
-
-    bot.send_message(chat_id,
-                     f"💱 معادل مبلغ واردشده:\n\n"
-                     f"• مقدار: {amount} {currency_info['name']} ({code})\n"
-                     f"• نرخ هر واحد: {rate:,} ریال\n"
-                     f"• معادل کل: {int(rial_value):,} ریال ≈ {int(toman_value):,} تومان\n\n"
-                     "آیا مایل به ادامه و ثبت نهایی هستید؟ (فعلاً این بخش تستی است.)")
-
-    # پاک کردن وضعیت
-    pending.pop(chat_id, None)
-
-# ----------- اجرای ربات -----------
+# ---------------- اجرای ربات ----------------
 if __name__ == "__main__":
-    print("✅ ربات نوسان‌پی با polling در حال اجراست و نرخ لحظه‌ای از bonbast دریافت می‌کند...")
+    print("✅ ربات نوسان‌پی با polling در حال اجراست...")
     bot.infinity_polling(timeout=60, long_polling_timeout=30)
