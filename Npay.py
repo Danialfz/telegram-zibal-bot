@@ -1,6 +1,5 @@
 import os
 import telebot
-import requests
 from telebot import types
 
 # ----------- تنظیمات -----------
@@ -15,6 +14,26 @@ try:
     print("✅ Webhook حذف شد تا polling بدون خطا اجرا شود.")
 except Exception as e:
     print(f"⚠️ خطا در حذف webhook: {e}")
+
+# ----------- ارزها و معادل فارسی ----------- 
+currencies = {
+    "USD": {"currency": "US Dollar", "persian": "دلار آمریکا"},
+    "EUR": {"currency": "Euro", "persian": "یورو"},
+    "GBP": {"currency": "British Pound", "persian": "پوند انگلیس"},
+    "CHF": {"currency": "Swiss Franc", "persian": "فرانک سوئیس"},
+    "CAD": {"currency": "Canadian Dollar", "persian": "دلار کانادا"},
+    "AUD": {"currency": "Australian Dollar", "persian": "دلار استرالیا"},
+    "SEK": {"currency": "Swedish Krona", "persian": "کرون سوئدی"},
+    "NOK": {"currency": "Norwegian Krone", "persian": "کرون نروژی"},
+    "RUB": {"currency": "Russian Ruble", "persian": "روبل روسیه"},
+    "THB": {"currency": "Thai Baht", "persian": "بات تایلند"},
+    "SGD": {"currency": "Singapore Dollar", "persian": "دلار سنگاپور"},
+    "HKD": {"currency": "Hong Kong Dollar", "persian": "دلار هنگ کنگ"},
+    "INR": {"currency": "Indian Rupee", "persian": "روپیه هند"},
+    "TRY": {"currency": "Turkish Lira", "persian": "لیر ترکیه"},
+    "CNY": {"currency": "Chinese Yuan", "persian": "یوان چین"},
+    "SAR": {"currency": "Saudi Riyal", "persian": "ریال سعودی"}
+}
 
 # ----------- دستورات ربات -----------
 @bot.message_handler(commands=['start'])
@@ -32,45 +51,57 @@ def start(message):
     bot.send_message(message.chat.id, "سلام 👋 به ربات نوسان‌پی خوش اومدی.\n"
                                       "لطفاً گزینه مورد نظر رو انتخاب کن:", reply_markup=markup)
 
+# ----------- ثبت سایر سفارش‌ها ----------- 
 @bot.message_handler(func=lambda message: message.text == "ثبت سایر سفارش‌ها")
 def show_orders(message):
-    # لیست ثبت سفارش‌ها به صورت Inline
     markup = types.InlineKeyboardMarkup(row_width=2)
     
-    # دکمه‌ها برای ثبت سفارش‌ها
     item1 = types.InlineKeyboardButton("پرداخت با پی پال", callback_data="paypal")
     item2 = types.InlineKeyboardButton("خرید بلیط پرواز خارجی", callback_data="flight_ticket")
     item3 = types.InlineKeyboardButton("اکانت Grammarly Premium", callback_data="grammarly")
     item4 = types.InlineKeyboardButton("رزرو خانه در AirBnb", callback_data="airbnb")
+    item5 = types.InlineKeyboardButton("خرید اکانت تریدینگ ویو", callback_data="trading_view")
+    item6 = types.InlineKeyboardButton("رزرو هتل با Booking.com", callback_data="booking")
     
-    markup.add(item1, item2, item3, item4)
+    markup.add(item1, item2, item3, item4, item5, item6)
     
     bot.send_message(message.chat.id, "لطفاً نوع سفارش خود را انتخاب کنید:", reply_markup=markup)
 
+# ----------- آزمون‌ها ----------- 
 @bot.message_handler(func=lambda message: message.text == "آزمون‌ها")
 def show_exams(message):
-    # لیست آزمون‌ها
     markup = types.InlineKeyboardMarkup(row_width=2)
+    
     item1 = types.InlineKeyboardButton("ثبت نام CFA", callback_data="cfa")
     item2 = types.InlineKeyboardButton("ثبت نام آیلتس (IELTS)", callback_data="ielts")
-    markup.add(item1, item2)
+    item3 = types.InlineKeyboardButton("ثبت نام USMLE", callback_data="usmle")
+    item4 = types.InlineKeyboardButton("ثبت نام GRE", callback_data="gre")
+    
+    markup.add(item1, item2, item3, item4)
     
     bot.send_message(message.chat.id, "لطفاً نوع آزمون مورد نظر رو انتخاب کن:", reply_markup=markup)
 
+# ----------- هزینه اپلای ----------- 
 @bot.message_handler(func=lambda message: message.text == "هزینه اپلای")
 def show_apply_fees(message):
     markup = types.InlineKeyboardMarkup(row_width=2)
+    
     item1 = types.InlineKeyboardButton("اپلیکیشن فی دانشگاه", callback_data="university_fee")
     item2 = types.InlineKeyboardButton("پرداخت uni-assist آلمان", callback_data="uni_assist")
-    markup.add(item1, item2)
+    item3 = types.InlineKeyboardButton("دیپازیت فی دانشگاه", callback_data="deposit_fee")
+    
+    markup.add(item1, item2, item3)
     
     bot.send_message(message.chat.id, "لطفاً نوع هزینه اپلای را انتخاب کنید:", reply_markup=markup)
 
+# ----------- انتقال ارز ----------- 
 @bot.message_handler(func=lambda message: message.text == "انتقال ارز")
 def show_currency_transfer(message):
     markup = types.InlineKeyboardMarkup(row_width=2)
+    
     item1 = types.InlineKeyboardButton("انتقال از داخل به خارج", callback_data="transfer_in_out")
     item2 = types.InlineKeyboardButton("انتقال از خارج به داخل", callback_data="transfer_out_in")
+    
     markup.add(item1, item2)
     
     bot.send_message(message.chat.id, "لطفاً نوع انتقال ارز را انتخاب کنید:", reply_markup=markup)
@@ -88,14 +119,24 @@ def callback_handler(call):
         bot.answer_callback_query(call.id, "اکانت Grammarly Premium انتخاب شد.")
     elif call.data == "airbnb":
         bot.answer_callback_query(call.id, "رزرو خانه در AirBnb انتخاب شد.")
+    elif call.data == "trading_view":
+        bot.answer_callback_query(call.id, "خرید اکانت تریدینگ ویو انتخاب شد.")
+    elif call.data == "booking":
+        bot.answer_callback_query(call.id, "رزرو هتل با Booking.com انتخاب شد.")
     elif call.data == "cfa":
         bot.answer_callback_query(call.id, "ثبت نام CFA انتخاب شد.")
     elif call.data == "ielts":
         bot.answer_callback_query(call.id, "ثبت نام آیلتس (IELTS) انتخاب شد.")
+    elif call.data == "usmle":
+        bot.answer_callback_query(call.id, "ثبت نام USMLE انتخاب شد.")
+    elif call.data == "gre":
+        bot.answer_callback_query(call.id, "ثبت نام GRE انتخاب شد.")
     elif call.data == "university_fee":
         bot.answer_callback_query(call.id, "پرداخت اپلیکیشن فی دانشگاه انتخاب شد.")
     elif call.data == "uni_assist":
         bot.answer_callback_query(call.id, "پرداخت uni-assist آلمان انتخاب شد.")
+    elif call.data == "deposit_fee":
+        bot.answer_callback_query(call.id, "دیپازیت فی دانشگاه انتخاب شد.")
     elif call.data == "transfer_in_out":
         bot.answer_callback_query(call.id, "انتقال از داخل به خارج انتخاب شد.")
     elif call.data == "transfer_out_in":
