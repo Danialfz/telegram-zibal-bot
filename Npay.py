@@ -1,6 +1,7 @@
 import os
 import telebot
 import requests
+from telebot import types
 
 # ----------- تنظیمات -----------
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8589520464:AAE3x1LjHw0wWepIX6bJePQ_d0z9AXB-1t4")
@@ -18,30 +19,87 @@ except Exception as e:
 # ----------- دستورات ربات -----------
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "سلام 👋 به ربات پرداخت نوسان‌پی خوش اومدی.\nبرای پرداخت تستی دستور /pay رو بفرست 💳")
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    
+    # دکمه‌ها
+    item1 = types.KeyboardButton("ثبت سایر سفارش‌ها")
+    item2 = types.KeyboardButton("آزمون‌ها")
+    item3 = types.KeyboardButton("هزینه اپلای")
+    item4 = types.KeyboardButton("انتقال ارز")
+    
+    markup.add(item1, item2, item3, item4)
+    
+    bot.send_message(message.chat.id, "سلام 👋 به ربات نوسان‌پی خوش اومدی.\n"
+                                      "لطفاً گزینه مورد نظر رو انتخاب کن:", reply_markup=markup)
 
-@bot.message_handler(commands=['pay'])
-def pay(message):
-    amount = 10000  # مبلغ تستی به تومان
-    callback_url = "https://zibal.ir"  # چون polling داریم، آدرس تأیید لازم نیست
+@bot.message_handler(func=lambda message: message.text == "ثبت سایر سفارش‌ها")
+def show_orders(message):
+    # لیست ثبت سفارش‌ها به صورت Inline
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    
+    # دکمه‌ها برای ثبت سفارش‌ها
+    item1 = types.InlineKeyboardButton("پرداخت با پی پال", callback_data="paypal")
+    item2 = types.InlineKeyboardButton("خرید بلیط پرواز خارجی", callback_data="flight_ticket")
+    item3 = types.InlineKeyboardButton("اکانت Grammarly Premium", callback_data="grammarly")
+    item4 = types.InlineKeyboardButton("رزرو خانه در AirBnb", callback_data="airbnb")
+    
+    markup.add(item1, item2, item3, item4)
+    
+    bot.send_message(message.chat.id, "لطفاً نوع سفارش خود را انتخاب کنید:", reply_markup=markup)
 
-    data = {
-        "merchant": MERCHANT,
-        "amount": amount,
-        "callbackUrl": callback_url,
-        "description": f"پرداخت توسط کاربر {message.from_user.id}"
-    }
+@bot.message_handler(func=lambda message: message.text == "آزمون‌ها")
+def show_exams(message):
+    # لیست آزمون‌ها
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    item1 = types.InlineKeyboardButton("ثبت نام CFA", callback_data="cfa")
+    item2 = types.InlineKeyboardButton("ثبت نام آیلتس (IELTS)", callback_data="ielts")
+    markup.add(item1, item2)
+    
+    bot.send_message(message.chat.id, "لطفاً نوع آزمون مورد نظر رو انتخاب کن:", reply_markup=markup)
 
-    try:
-        res = requests.post("https://gateway.zibal.ir/v1/request", json=data).json()
-        if res.get("result") == 100:
-            track_id = res.get("trackId")
-            pay_url = f"https://gateway.zibal.ir/start/{track_id}"
-            bot.send_message(message.chat.id, f"✅ تراکنش ایجاد شد.\nبرای پرداخت روی لینک زیر کلیک کن:\n{pay_url}")
-        else:
-            bot.send_message(message.chat.id, f"❌ خطا در ایجاد تراکنش: {res.get('message')}")
-    except Exception as e:
-        bot.send_message(message.chat.id, f"⚠️ خطا در اتصال به درگاه: {e}")
+@bot.message_handler(func=lambda message: message.text == "هزینه اپلای")
+def show_apply_fees(message):
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    item1 = types.InlineKeyboardButton("اپلیکیشن فی دانشگاه", callback_data="university_fee")
+    item2 = types.InlineKeyboardButton("پرداخت uni-assist آلمان", callback_data="uni_assist")
+    markup.add(item1, item2)
+    
+    bot.send_message(message.chat.id, "لطفاً نوع هزینه اپلای را انتخاب کنید:", reply_markup=markup)
+
+@bot.message_handler(func=lambda message: message.text == "انتقال ارز")
+def show_currency_transfer(message):
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    item1 = types.InlineKeyboardButton("انتقال از داخل به خارج", callback_data="transfer_in_out")
+    item2 = types.InlineKeyboardButton("انتقال از خارج به داخل", callback_data="transfer_out_in")
+    markup.add(item1, item2)
+    
+    bot.send_message(message.chat.id, "لطفاً نوع انتقال ارز را انتخاب کنید:", reply_markup=markup)
+
+# ----------- پیاده‌سازی callback ها -----------
+
+# زمانی که کاربر گزینه‌ای رو انتخاب کرد
+@bot.callback_query_handler(func=lambda call: True)
+def callback_handler(call):
+    if call.data == "paypal":
+        bot.answer_callback_query(call.id, "پرداخت با پی پال انتخاب شد.")
+    elif call.data == "flight_ticket":
+        bot.answer_callback_query(call.id, "خرید بلیط پرواز خارجی انتخاب شد.")
+    elif call.data == "grammarly":
+        bot.answer_callback_query(call.id, "اکانت Grammarly Premium انتخاب شد.")
+    elif call.data == "airbnb":
+        bot.answer_callback_query(call.id, "رزرو خانه در AirBnb انتخاب شد.")
+    elif call.data == "cfa":
+        bot.answer_callback_query(call.id, "ثبت نام CFA انتخاب شد.")
+    elif call.data == "ielts":
+        bot.answer_callback_query(call.id, "ثبت نام آیلتس (IELTS) انتخاب شد.")
+    elif call.data == "university_fee":
+        bot.answer_callback_query(call.id, "پرداخت اپلیکیشن فی دانشگاه انتخاب شد.")
+    elif call.data == "uni_assist":
+        bot.answer_callback_query(call.id, "پرداخت uni-assist آلمان انتخاب شد.")
+    elif call.data == "transfer_in_out":
+        bot.answer_callback_query(call.id, "انتقال از داخل به خارج انتخاب شد.")
+    elif call.data == "transfer_out_in":
+        bot.answer_callback_query(call.id, "انتقال از خارج به داخل انتخاب شد.")
 
 # ----------- اجرای ربات -----------
 if __name__ == "__main__":
