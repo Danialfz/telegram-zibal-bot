@@ -30,7 +30,7 @@ currencies = {
 
 # ---------------- وضعیت کاربران ----------------
 pending = {}
-awaiting_info = set()  # برای کاربرانی که باید اطلاعات واریز ارسال کنند
+awaiting_info = set()  # کاربرانی که باید اطلاعات واریز ارسال کنند
 
 # ---------------- شروع ----------------
 @bot.message_handler(commands=['start'])
@@ -163,12 +163,20 @@ def receive_amount(message):
                 data["total"] = total
                 data["awaiting"] = "confirm"
 
+                # ساخت دکمه‌های تأیید و لغو
+                markup = types.InlineKeyboardMarkup()
+                markup.row(
+                    types.InlineKeyboardButton("✅ تأیید تراکنش", callback_data="confirm"),
+                    types.InlineKeyboardButton("❌ لغو تراکنش", callback_data="cancel")
+                )
+
                 bot.send_message(
                     user_id,
                     f"💰 مبلغ نهایی توسط ادمین مشخص شد:\n\n"
                     f"• مقدار ارز: {data['amount']:,} {data['currency']}\n"
                     f"• مبلغ کل پرداختی: {total:,.0f} تومان\n\n"
-                    "✅ در صورت تأیید، بنویسید «تأیید» یا در صورت انصراف، بنویسید «لغو»."
+                    "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:",
+                    reply_markup=markup
                 )
 
                 bot.send_message(chat_id, f"✅ نرخ برای کاربر {user_id} ثبت و ارسال شد.")
@@ -177,22 +185,31 @@ def receive_amount(message):
         bot.send_message(chat_id, "⚠️ در حال حاضر هیچ درخواست فعالی برای قیمت‌گذاری وجود ندارد.")
         return
 
-    # مرحله تأیید یا لغو توسط کاربر
-    if state and state.get("awaiting") == "confirm":
-        if text == "تأیید":
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("📤 ارسال اطلاعات جهت واریز", callback_data="send_info"))
-            bot.send_message(chat_id, "✅ تراکنش تأیید شد.\nلطفاً اطلاعات مورد نیاز جهت واریز را ارسال کنید.", reply_markup=markup)
-            return
-        elif text == "لغو":
-            pending.pop(chat_id, None)
-            bot.send_message(chat_id, "❌ روند انتقال ارز شما لغو شد.")
-            return start(message)
-        else:
-            bot.send_message(chat_id, "لطفاً بنویسید «تأیید» یا «لغو».")
-            return
+# ---------------- هندل دکمه‌های تأیید یا لغو ----------------
+@bot.callback_query_handler(func=lambda call: call.data in ["confirm", "cancel"])
+def handle_confirmation(call):
+    chat_id = call.message.chat.id
+    state = pending.get(chat_id)
 
-    bot.reply_to(message, "برای شروع، گزینه «💸 انتقال ارز» را از منوی اصلی انتخاب کنید.")
+    if not state:
+        bot.answer_callback_query(call.id, "درخواست منقضی شده است.")
+        return
+
+    if call.data == "confirm":
+        # تأیید تراکنش
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("📤 ارسال اطلاعات جهت واریز", callback_data="send_info"))
+        bot.edit_message_text(
+            "✅ تراکنش شما تأیید شد.\nلطفاً اطلاعات مورد نیاز جهت واریز را ارسال کنید:",
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            reply_markup=markup
+        )
+    else:
+        # لغو تراکنش
+        pending.pop(chat_id, None)
+        bot.edit_message_text("❌ روند انتقال ارز شما لغو شد.", chat_id=chat_id, message_id=call.message.message_id)
+        start(types.SimpleNamespace(chat=types.SimpleNamespace(id=chat_id)))
 
 # ---------------- کلیک دکمه ارسال اطلاعات ----------------
 @bot.callback_query_handler(func=lambda call: call.data == "send_info")
