@@ -30,7 +30,7 @@ currencies = {
 
 # ---------------- وضعیت کاربران ----------------
 pending = {}
-awaiting_info = set()  # کاربرانی که باید اطلاعات واریز ارسال کنند
+awaiting_info = set()  # کاربران منتظر ارسال اطلاعات واریز
 
 # ---------------- شروع ----------------
 @bot.message_handler(commands=['start'])
@@ -105,7 +105,7 @@ def receive_amount(message):
         pending.pop(chat_id, None)
         return start(message)
 
-    # اگر کاربر در مرحله ارسال اطلاعات واریز است:
+    # ✅ اگر کاربر در مرحله ارسال اطلاعات واریز است
     if chat_id in awaiting_info:
         if re.search(r"https?://|t\.me|@", text, re.IGNORECASE):
             bot.delete_message(chat_id, message.message_id)
@@ -114,7 +114,9 @@ def receive_amount(message):
 
         bot.send_message(
             ADMIN_ID,
-            f"📦 اطلاعات واریز از کاربر {chat_id}:\n{text}"
+            f"📦 اطلاعات واریز از کاربر @{message.from_user.username or message.from_user.first_name}:\n"
+            f"🆔 Chat ID: {chat_id}\n"
+            f"متن ارسالی:\n{text}"
         )
         bot.send_message(chat_id, "✅ اطلاعات شما با موفقیت ارسال شد. در حال بررسی توسط پشتیبانی هستیم.")
         awaiting_info.remove(chat_id)
@@ -122,7 +124,7 @@ def receive_amount(message):
 
     state = pending.get(chat_id)
 
-    # مرحله دریافت مقدار از کاربر
+    # ✅ مرحله دریافت مقدار
     if state and state.get("awaiting") == "amount":
         normalized = text.replace(",", "").replace(" ", "")
         try:
@@ -140,7 +142,7 @@ def receive_amount(message):
         pending[chat_id]["amount"] = amount
         pending[chat_id]["awaiting"] = None
 
-        # ارسال درخواست به ادمین
+        # ارسال به ادمین
         bot.send_message(
             ADMIN_ID,
             f"📩 درخواست جدید از کاربر @{message.from_user.username or message.from_user.first_name}\n"
@@ -154,7 +156,7 @@ def receive_amount(message):
         bot.send_message(chat_id, "✅ درخواست شما برای بررسی قیمت ارسال شد. لطفاً منتظر پاسخ ادمین باشید.")
         return
 
-    # مرحله پاسخ ادمین (تعیین نرخ واحد)
+    # ✅ مرحله پاسخ ادمین (تعیین نرخ)
     if chat_id == ADMIN_ID and re.match(r"^\d+(\.\d+)?$", text):
         rate = float(text)
         for user_id, data in pending.items():
@@ -163,11 +165,10 @@ def receive_amount(message):
                 data["total"] = total
                 data["awaiting"] = "confirm"
 
-                # ساخت دکمه‌های تأیید و لغو
                 markup = types.InlineKeyboardMarkup()
-                markup.row(
-                    types.InlineKeyboardButton("✅ تأیید تراکنش", callback_data="confirm"),
-                    types.InlineKeyboardButton("❌ لغو تراکنش", callback_data="cancel")
+                markup.add(
+                    types.InlineKeyboardButton("✅ تأیید", callback_data="confirm_transaction"),
+                    types.InlineKeyboardButton("❌ لغو", callback_data="cancel_transaction")
                 )
 
                 bot.send_message(
@@ -175,7 +176,7 @@ def receive_amount(message):
                     f"💰 مبلغ نهایی توسط ادمین مشخص شد:\n\n"
                     f"• مقدار ارز: {data['amount']:,} {data['currency']}\n"
                     f"• مبلغ کل پرداختی: {total:,.0f} تومان\n\n"
-                    "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:",
+                    "آیا تأیید می‌کنید؟",
                     reply_markup=markup
                 )
 
@@ -185,38 +186,32 @@ def receive_amount(message):
         bot.send_message(chat_id, "⚠️ در حال حاضر هیچ درخواست فعالی برای قیمت‌گذاری وجود ندارد.")
         return
 
-# ---------------- هندل دکمه‌های تأیید یا لغو ----------------
-@bot.callback_query_handler(func=lambda call: call.data in ["confirm", "cancel"])
-def handle_confirmation(call):
+    bot.reply_to(message, "برای شروع، گزینه «💸 انتقال ارز» را از منوی اصلی انتخاب کنید.")
+
+# ---------------- هندلر دکمه تأیید ----------------
+@bot.callback_query_handler(func=lambda call: call.data == "confirm_transaction")
+def confirm_transaction(call):
     chat_id = call.message.chat.id
-    state = pending.get(chat_id)
+    bot.answer_callback_query(call.id)
+    bot.delete_message(chat_id, call.message.message_id)
 
-    if not state:
-        bot.answer_callback_query(call.id, "درخواست منقضی شده است.")
-        return
-
-    if call.data == "confirm":
-        # تأیید تراکنش
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("📤 ارسال اطلاعات جهت واریز", callback_data="send_info"))
-        bot.edit_message_text(
-            "✅ تراکنش شما تأیید شد.\nلطفاً اطلاعات مورد نیاز جهت واریز را ارسال کنید:",
-            chat_id=chat_id,
-            message_id=call.message.message_id,
-            reply_markup=markup
-        )
-    else:
-        # لغو تراکنش
-        pending.pop(chat_id, None)
-        bot.edit_message_text("❌ روند انتقال ارز شما لغو شد.", chat_id=chat_id, message_id=call.message.message_id)
-        start(types.SimpleNamespace(chat=types.SimpleNamespace(id=chat_id)))
-
-# ---------------- کلیک دکمه ارسال اطلاعات ----------------
-@bot.callback_query_handler(func=lambda call: call.data == "send_info")
-def send_info_handler(call):
-    chat_id = call.message.chat.id
-    bot.send_message(chat_id, "✉️ لطفاً اطلاعات مورد نیاز جهت واریز را به صورت متن ارسال کنید (بدون لینک، عکس یا فایل).")
+    bot.send_message(
+        chat_id,
+        "✅ تراکنش تأیید شد.\n"
+        "✉️ لطفاً اطلاعات مورد نیاز جهت واریز را به صورت متن ارسال کنید (بدون لینک، عکس یا فایل)."
+    )
     awaiting_info.add(chat_id)
+
+# ---------------- هندلر دکمه لغو ----------------
+@bot.callback_query_handler(func=lambda call: call.data == "cancel_transaction")
+def cancel_transaction(call):
+    chat_id = call.message.chat.id
+    bot.answer_callback_query(call.id)
+    bot.delete_message(chat_id, call.message.message_id)
+
+    pending.pop(chat_id, None)
+    bot.send_message(chat_id, "❌ روند انتقال ارز شما لغو شد.")
+    start(call.message)
 
 # ---------------- اجرای ربات ----------------
 if __name__ == "__main__":
