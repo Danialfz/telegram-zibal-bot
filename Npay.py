@@ -79,7 +79,7 @@ def ask_amount(message):
 
     bot.send_message(chat_id, f"شما ارز «{currencies[code]} ({code})» را انتخاب کردید.\n\nلطفاً مقدار را وارد کنید:", reply_markup=markup)
 
-# ---------------- مرحله ۴: دریافت مقدار ----------------
+# ---------------- مرحله ۴: پردازش مقدار ----------------
 @bot.message_handler(func=lambda m: True)
 def all_messages(message):
     chat_id = message.chat.id
@@ -103,7 +103,7 @@ def all_messages(message):
         else:
             return main_menu(chat_id, "به منوی اصلی بازگشتید.")
 
-    # اگر در مرحله ارسال اطلاعات هست
+    # اگر کاربر در مرحله ارسال اطلاعات هست
     if chat_id in awaiting_info:
         if re.search(r"https?://|t\.me|@", text, re.IGNORECASE):
             bot.send_message(chat_id, "⚠️ لطفاً فقط متن ساده ارسال کنید.")
@@ -171,11 +171,31 @@ def all_messages(message):
     if state.get("step") == "confirm":
         if text == "✅ تأیید":
             awaiting_info.add(chat_id)
+
+            direction = state.get("direction", "")
             markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
             markup.add(types.KeyboardButton("🔙 منوی اصلی"))
-            bot.send_message(chat_id, "✅ تراکنش تأیید شد.\n✉️ لطفاً اطلاعات مورد نیاز جهت واریز را ارسال کنید.", reply_markup=markup)
+
+            if "داخل به خارج" in direction:
+                bot.send_message(
+                    chat_id,
+                    "✅ تراکنش تأیید شد.\n\n"
+                    "✉️ لطفاً اطلاعات حساب دریافت‌کننده را به صورت متن ارسال کنید.\n"
+                    "(نام و نام خانوادگی دریافت‌کننده، کشور، شهر، نام بانک، شماره حساب و سایر جزئیات لازم)",
+                    reply_markup=markup
+                )
+            else:
+                bot.send_message(
+                    chat_id,
+                    "✅ تراکنش تأیید شد.\n\n"
+                    "✉️ لطفاً اطلاعات حساب جهت واریز را به صورت متن ارسال کنید.\n"
+                    "(شماره حساب / شماره کارت / شماره شبا / نام و نام خانوادگی دریافت‌کننده / نام و نام خانوادگی واریزکننده)",
+                    reply_markup=markup
+                )
+
             pending.pop(chat_id, None)
             return
+
         elif text == "❌ لغو":
             pending.pop(chat_id, None)
             bot.send_message(chat_id, "❌ روند انتقال ارز شما لغو شد.")
