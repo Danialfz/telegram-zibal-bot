@@ -6,7 +6,7 @@ from telebot import types
 # ---------------- تنظیمات ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "1611406302"))  # آی‌دی ادمین
-PAYMENT_LINK = "https://example.com/payment"  # لینک پرداخت آزمایشی
+PAYMENT_LINK = "https://example.com/payment"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -29,10 +29,19 @@ currencies = {
     "QAR": "ریال قطر 🇶🇦"
 }
 
-# وضعیت‌های در حافظه
-pending = {}              # pending[chat_id] = {...state...}
-awaiting_info = set()     # کاربرانی که باید اطلاعات حساب بفرستند (پس از تایید)
-awaiting_admin_fix = {}   # user_id -> "pending_check" (وقتی اطلاعات به ادمین فرستاده شد)
+# ---------------- اطلاعات لازم برای هر کشور ----------------
+country_requirements = {
+    "🇹🇷 ترکیه": "نام و نام خانوادگی دریافت‌کننده / شماره IBAN / نام بانک / شهر و شعبه بانک",
+    "🇨🇳 چین": "نام و نام خانوادگی دریافت‌کننده / شماره حساب بانکی / نام بانک / شهر",
+    "🇪🇺 اروپا": "نام و نام خانوادگی / شماره IBAN / نام بانک / کشور مقصد",
+    "🇺🇸 آمریکا": "نام کامل / شماره حساب / نام بانک / ABA Routing Number",
+    "🇬🇧 انگلیس": "نام کامل / Sort Code / Account Number / نام بانک"
+}
+
+# ---------------- متغیرهای موقت ----------------
+pending = {}
+awaiting_info = set()
+awaiting_admin_fix = {}
 
 # ---------------- منوها ----------------
 def main_menu_markup():
@@ -47,13 +56,9 @@ def back_to_main_markup():
 
 def country_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(
-        types.KeyboardButton("🇺🇸 آمریکا"),
-        types.KeyboardButton("🇪🇺 اروپا"),
-        types.KeyboardButton("🇬🇧 انگلیس"),
-        types.KeyboardButton("🇹🇷 ترکیه"),
-        types.KeyboardButton("🔙 بازگشت به منوی اصلی")
-    )
+    for c in country_requirements.keys():
+        markup.add(types.KeyboardButton(c))
+    markup.add(types.KeyboardButton("🔙 بازگشت به منوی اصلی"))
     return markup
 
 # ---------------- /start ----------------
@@ -76,178 +81,170 @@ def transfer_menu(message):
     )
     bot.send_message(message.chat.id, "لطفاً نوع انتقال را انتخاب کنید:", reply_markup=markup)
 
-# ---------------- نمایش ارزها ----------------
-@bot.message_handler(func=lambda m: m.text in ["🌍 از داخل به خارج", "🏦 از خارج به داخل"])
-def show_currencies(message):
+# ---------------- انتخاب کشور برای داخل به خارج ----------------
+@bot.message_handler(func=lambda m: m.text == "🌍 از داخل به خارج")
+def choose_country(message):
     chat_id = message.chat.id
-    # متن جهت دقیق (طبق خواسته‌ات)
-    direction = "متقاضی قصد واریز از داخل به خارج دارد" if "داخل به خارج" in message.text else "متقاضی قصد واریز از خارج به داخل دارد"
-    pending[chat_id] = {"direction": direction, "currency": None, "awaiting": None}
+    pending[chat_id] = {"direction": "متقاضی قصد واریز از داخل به خارج دارد"}
+    bot.send_message(chat_id, "لطفاً کشور مقصد را انتخاب کنید:", reply_markup=country_menu())
 
+# ---------------- انتخاب ارز برای خارج به داخل ----------------
+@bot.message_handler(func=lambda m: m.text == "🏦 از خارج به داخل")
+def show_currencies_in(message):
+    chat_id = message.chat.id
+    pending[chat_id] = {"direction": "متقاضی قصد واریز از خارج به داخل دارد"}
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     for code, name in currencies.items():
         markup.add(types.KeyboardButton(f"{name} ({code})"))
     markup.add(types.KeyboardButton("🔙 بازگشت به منوی اصلی"))
     bot.send_message(chat_id, "نوع ارز مورد نظر را انتخاب کنید:", reply_markup=markup)
 
-# ---------------- کاربر ارز را انتخاب می‌کند -> پرسش مقدار ----------------
+# ---------------- کشور انتخاب شد -> ارز ----------------
+@bot.message_handler(func=lambda m: m.text in country_requirements.keys())
+def choose_currency_for_country(message):
+    chat_id = message.chat.id
+    if chat_id not in pending:
+        return start(message)
+
+    pending[chat_id]["country"] = message.text
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    for code, name in currencies.items():
+        markup.add(types.KeyboardButton(f"{name} ({code})"))
+    markup.add(types.KeyboardButton("🔙 بازگشت به منوی اصلی"))
+    bot.send_message(chat_id, f"کشور مقصد: {message.text}\nاکنون نوع ارز را انتخاب کنید:", reply_markup=markup)
+
+# ---------------- انتخاب ارز -> مقدار ----------------
 @bot.message_handler(func=lambda m: bool(re.match(r".*\([A-Z]{3}\)\s*$", m.text or "")))
 def ask_amount(message):
     chat_id = message.chat.id
     match = re.search(r"\(([A-Z]{3})\)\s*$", message.text.strip())
     if not match:
-        return bot.reply_to(message, "فرمت ارز صحیح نیست. لطفاً مجدداً انتخاب کنید.")
+        return bot.reply_to(message, "فرمت ارز صحیح نیست.")
 
     code = match.group(1)
     if code not in currencies:
         return bot.reply_to(message, "این ارز در فهرست نیست.")
 
-    # ذخیره جهت و ارز و تعیین مرحله انتظار مقدار
-    pending[chat_id] = {
-        "direction": pending.get(chat_id, {}).get("direction", None),
-        "currency": code,
-        "awaiting": "amount"   # مرحله بعد: منتظر عدد مقدار
-    }
+    if chat_id not in pending:
+        return start(message)
+
+    pending[chat_id]["currency"] = code
+    pending[chat_id]["awaiting"] = "amount"
 
     bot.send_message(chat_id,
         f"شما ارز «{currencies[code]} ({code})» را انتخاب کردید.\n"
-        "لطفاً مقدار را وارد کنید (مثلاً 2500 یا 12.5):",
+        "لطفاً مقدار را وارد کنید (مثلاً 2500):",
         reply_markup=back_to_main_markup()
     )
 
-# ---------------- همه پیام‌ها (منطق اصلی) ----------------
+# ---------------- منطق اصلی ----------------
 @bot.message_handler(func=lambda m: True)
 def main_handler(message):
     chat_id = message.chat.id
-    text = (message.text or "").strip()
+    text = message.text.strip()
 
-    # --- بازگشت به منوی اصلی ---
+    # --- بازگشت ---
     if text in ["🔙 بازگشت به منوی اصلی", "/start"]:
         pending.pop(chat_id, None)
         awaiting_info.discard(chat_id)
         return start(message)
 
-    # --- اگر کاربر در مرحله ارسال اطلاعات پس از تایید است ---
+    # --- مرحله ارسال اطلاعات حساب ---
     if chat_id in awaiting_info:
-        # از ارسال لینک و تگ جلوگیری کن
         if re.search(r"https?://|t\.me|@", text, re.IGNORECASE):
-            try:
-                bot.delete_message(chat_id, message.message_id)
-            except:
-                pass
-            return bot.send_message(chat_id, "⚠️ لطفاً فقط متن ساده ارسال کنید (بدون لینک یا تگ).")
+            bot.delete_message(chat_id, message.message_id)
+            return bot.send_message(chat_id, "⚠️ لطفاً فقط متن ساده بفرستید.")
 
-        # ارسال اطلاعات به ادمین و علامت‌گذاری برای انتظار بررسی
         bot.send_message(ADMIN_ID, f"📦 اطلاعات حساب از کاربر {chat_id}:\n\n{text}")
-        bot.send_message(chat_id, "✅ اطلاعات شما ارسال شد، منتظر بررسی ادمین باشید.")
+        bot.send_message(chat_id, "✅ اطلاعات شما ارسال شد. منتظر بررسی ادمین باشید.")
         awaiting_info.remove(chat_id)
         awaiting_admin_fix[chat_id] = "pending_check"
         return
 
-    # --- اگر کاربر در مرحله وارد کردن مقدار است ---
     state = pending.get(chat_id)
-    if state and state.get("awaiting") == "amount":
-        normalized = text.replace(",", "").replace(" ", "")
-        try:
-            amount = float(normalized)
-            if amount <= 0:
-                raise ValueError()
-        except Exception:
-            return bot.reply_to(message, "⚠️ لطفاً عدد مثبت وارد کنید (مثلاً: 2500)")
 
-        # ذخیره مقدار و ست کردن وضعیت به waiting_rate تا ادمین بدونه برای چه درخواستی باید نرخ بزنه
+    # --- مرحله مقدار ---
+    if state and state.get("awaiting") == "amount":
+        try:
+            amount = float(text.replace(",", ""))
+            if amount <= 0:
+                raise ValueError
+        except:
+            return bot.reply_to(message, "عدد معتبر وارد کنید (مثلاً 1500).")
+
         pending[chat_id]["amount"] = amount
         pending[chat_id]["awaiting"] = "waiting_rate"
 
-        # پیام به ادمین: درخواست جدید و درخواست نرخ واحد
         bot.send_message(
             ADMIN_ID,
             f"📩 درخواست جدید از کاربر @{message.from_user.username or message.from_user.first_name}\n"
             f"📍 {state.get('direction')}\n"
+            f"🌍 کشور مقصد: {state.get('country', '---')}\n"
             f"💱 {currencies[state['currency']]} ({state['currency']})\n"
             f"📊 مقدار: {amount:,}\n"
             f"🆔 Chat ID: {chat_id}\n\n"
-            "📌 لطفاً نرخ هر واحد را به تومان وارد کنید (فقط عدد)."
+            "📌 لطفاً نرخ هر واحد را وارد کنید (عدد)."
         )
-
-        bot.send_message(chat_id, "✅ درخواست شما برای بررسی قیمت ارسال شد. لطفاً منتظر پاسخ ادمین باشید.", reply_markup=main_menu_markup())
+        bot.send_message(chat_id, "✅ درخواست شما برای بررسی نرخ ارسال شد.", reply_markup=main_menu_markup())
         return
 
-    # --- بخش نرخ‌گذاری ادمین: فقط وقتی ادمین به صورت عددی نرخ را می‌فرستد ---
+    # --- نرخ‌گذاری ادمین ---
     if chat_id == ADMIN_ID and re.match(r"^\d+(\.\d+)?$", text):
         rate = float(text)
-        # پیدا کردن اولین درخواستِ waiting_rate (اولویت به ترتیب ورود در dict)
         target_user = None
         for uid, data in pending.items():
             if data.get("awaiting") == "waiting_rate":
                 target_user = uid
                 break
-
         if not target_user:
-            return bot.send_message(ADMIN_ID, "⚠️ در حال حاضر هیچ درخواستی در انتظار نرخ وجود ندارد.")
+            return bot.send_message(ADMIN_ID, "هیچ درخواستی در انتظار نرخ نیست.")
 
         data = pending[target_user]
         total = data["amount"] * rate
         data["total"] = total
         data["awaiting"] = "confirm"
 
-        # برای کاربر دکمه‌های تأیید/لغو/بازگشت نشان بده
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         markup.add(types.KeyboardButton("✅ تایید"), types.KeyboardButton("❌ لغو"))
         markup.add(types.KeyboardButton("🔙 بازگشت به منوی اصلی"))
 
-        # ارسال فقط مجموع به کاربر (مطابق خواسته‌ات)
         bot.send_message(
             target_user,
-            f"💰 مبلغ نهایی مشخص شد:\n\n"
+            f"💰 مبلغ نهایی مشخص شد:\n"
             f"• مقدار: {data['amount']:,} {data['currency']}\n"
             f"• مبلغ کل پرداختی: {total:,.0f} تومان\n\n"
-            "آیا تأیید می‌کنید؟",
+            "آیا تایید می‌کنید؟",
             reply_markup=markup
         )
-
-        bot.send_message(ADMIN_ID, f"✅ نرخ برای کاربر {target_user} ارسال شد.")
+        bot.send_message(ADMIN_ID, "✅ نرخ برای کاربر ارسال شد.")
         return
 
-    # --- کاربر تأیید یا لغو می‌کند (پس از دریافت مجموع) ---
-    state = pending.get(chat_id)
+    # --- تایید یا لغو ---
     if state and state.get("awaiting") == "confirm":
-        # تأیید
         if text == "✅ تایید":
-            # آماده دریافت اطلاعات حساب
             pending.pop(chat_id, None)
             awaiting_info.add(chat_id)
+            direction = state.get("direction", "")
 
-            # پیام بسته به جهت انتقال (طبق خواسته‌ات)
-            if "داخل به خارج" in state.get("direction", ""):
-                bot.send_message(
-                    chat_id,
-                    "✅ تراکنش تأیید شد.\n\n"
-                    "✉️ لطفاً اطلاعات حساب دریافت‌کننده (خارجی) را به صورت متن ارسال کنید:\n"
-                    "(نام و نام خانوادگی دریافت‌کننده / کشور / نام بانک / شماره حساب یا IBAN)",
-                    reply_markup=back_to_main_markup()
-                )
+            if "داخل به خارج" in direction:
+                country = state.get("country", "")
+                form = country_requirements.get(country, "نام و نام خانوادگی دریافت‌کننده / شماره حساب / نام بانک")
+                bot.send_message(chat_id, f"✉️ لطفاً اطلاعات حساب دریافت‌کننده را ارسال کنید:\n({form})", reply_markup=back_to_main_markup())
             else:
-                bot.send_message(
-                    chat_id,
-                    "✅ تراکنش تأیید شد.\n\n"
-                    "✉️ لطفاً اطلاعات حساب (برای واریز داخلی) را به صورت متن ارسال کنید:\n"
-                    "(شماره حساب / شماره کارت / شماره شبا / نام و نام خانوادگی دریافت‌کننده / نام و نام خانوادگی واریزکننده)",
+                bot.send_message(chat_id,
+                    "✉️ لطفاً اطلاعات حساب داخلی را ارسال کنید:\n(شماره حساب / شماره کارت / شماره شبا / نام و نام خانوادگی دریافت‌کننده / نام و نام خانوادگی واریزکننده)",
                     reply_markup=back_to_main_markup()
                 )
             return
 
-        # لغو
         if text == "❌ لغو":
             pending.pop(chat_id, None)
-            bot.send_message(chat_id, "❌ روند انتقال ارز شما لغو شد.", reply_markup=main_menu_markup())
+            bot.send_message(chat_id, "❌ روند انتقال لغو شد.", reply_markup=main_menu_markup())
             return
 
-        # هر ورودی دیگر را تذکر بده
-        return bot.send_message(chat_id, "لطفاً یکی از دکمه‌ها را انتخاب کنید: «✅ تایید» یا «❌ لغو».")
-    bot.send_message(chat_id, "برای شروع، گزینه «💸 انتقال ارز» را انتخاب کنید.", reply_markup=main_menu_markup())
+    bot.send_message(chat_id, "برای شروع گزینه «💸 انتقال ارز» را انتخاب کنید.", reply_markup=main_menu_markup())
 
-# ---------------- اجرای ربات ----------------
+# ---------------- اجرا ----------------
 if __name__ == "__main__":
-    print("✅ ربات نوسان‌پی در حال اجراست...")
+    print("✅ ربات نوسان‌پی فعال شد...")
     bot.infinity_polling(timeout=60, long_polling_timeout=30)
