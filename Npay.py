@@ -152,7 +152,7 @@ def receive_amount(message):
                     f"• مقدار: {data['amount']:,} {data['currency']}\n"
                     f"• نرخ هر واحد: {rate:,.0f} تومان\n"
                     f"• مجموع کل: {total:,.0f} تومان\n\n"
-                    "✅ در صورت تأیید، بنویسید «تأیید» یا اگر اشتباه است «لغو»."
+                    "✅ در صورت تأیید، کلمه (تایید) در صورت عدم تایید کلمه (لغو) را ارسال کنید»."
                 )
                 data["rate"] = rate
                 data["awaiting"] = "confirm"
@@ -182,3 +182,4 @@ def receive_amount(message):
 if __name__ == "__main__":
     print("✅ ربات نوسان‌پی در حال اجراست...")
     bot.infinity_polling(timeout=60, long_polling_timeout=30)
+
