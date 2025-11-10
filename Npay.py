@@ -9,10 +9,11 @@ from telebot import types
 # ---------------- تنظیمات ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 MERCHANT = os.getenv("MERCHANT")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))  # 👈 شناسه ادمین از Railway
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ---------------- فهرست ارزها (کد => نام فارسی) ----------------
+# ---------------- فهرست ارزها ----------------
 currencies = {
     "USD": "دلار آمریکا 🇺🇸",
     "EUR": "یورو 🇪🇺",
@@ -31,12 +32,11 @@ currencies = {
     "QAR": "ریال قطر 🇶🇦"
 }
 
-# ---------------- وضعیت موقت کاربران ----------------
 pending = {}
 
 # ---------------- کش نرخ‌ها ----------------
 CACHE_PATH = "rates_cache.json"
-CACHE_TTL = 60 * 5  # ثبات کش: ۵ دقیقه
+CACHE_TTL = 60 * 5
 
 def load_cache():
     try:
@@ -52,7 +52,6 @@ def save_cache(cache):
     except Exception as e:
         print("⚠️ couldn't save cache:", e)
 
-# ---------------- گرفتن نرخ از API رایگان ----------------
 BASE_URL = "https://api.exchangerate.host/convert"
 
 def fetch_rate_api(from_code: str, to_code: str = "IRR"):
@@ -62,11 +61,8 @@ def fetch_rate_api(from_code: str, to_code: str = "IRR"):
         r = requests.get(BASE_URL, params=params, headers=headers, timeout=8)
         r.raise_for_status()
         data = r.json()
-        if isinstance(data, dict):
-            if "result" in data and data["result"] is not None:
-                return float(data["result"])
-            if "info" in data and isinstance(data["info"], dict) and "rate" in data["info"]:
-                return float(data["info"]["rate"])
+        if isinstance(data, dict) and data.get("result"):
+            return float(data["result"])
     except Exception as e:
         print("❌ fetch_rate_api error:", e)
     return None
@@ -86,16 +82,8 @@ def get_rate(from_code: str):
     rate = fetch_rate_api(from_code, "IRR")
     if rate is not None:
         cache[key] = {"rate": rate, "ts": now}
-        try:
-            save_cache(cache)
-        except:
-            pass
+        save_cache(cache)
         return rate, False, 0
-
-    if key in cache and cache[key].get("rate") is not None:
-        entry = cache[key]
-        age = now - entry.get("ts", 0)
-        return entry["rate"], True, age
 
     return None, False, None
 
@@ -103,19 +91,13 @@ def get_rate(from_code: str):
 @bot.message_handler(commands=['start'])
 def start(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    transfer_btn = types.KeyboardButton("💸 انتقال ارز")
-    markup.add(transfer_btn)
-    bot.send_message(
-        message.chat.id,
-        "سلام 👋 به ربات نوسان‌پی خوش‌آمدید.\nبرای شروع «💸 انتقال ارز» را انتخاب کنید.",
-        reply_markup=markup
-    )
+    markup.add(types.KeyboardButton("💸 انتقال ارز"))
+    bot.send_message(message.chat.id, "سلام 👋 به ربات نوسان‌پی خوش‌آمدید.\nبرای شروع «💸 انتقال ارز» را انتخاب کنید.", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == "💸 انتقال ارز")
 def transfer_menu(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(types.KeyboardButton("🌍 از داخل به خارج"),
-               types.KeyboardButton("🏦 از خارج به داخل"))
+    markup.add(types.KeyboardButton("🌍 از داخل به خارج"), types.KeyboardButton("🏦 از خارج به داخل"))
     bot.send_message(message.chat.id, "لطفاً نوع انتقال را انتخاب کنید:", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text in ["🌍 از داخل به خارج", "🏦 از خارج به داخل"])
@@ -128,90 +110,86 @@ def show_currencies(message):
     for code, name in currencies.items():
         markup.add(types.KeyboardButton(f"{name} ({code})"))
     markup.add(types.KeyboardButton("🔙 منوی اصلی"))
-    bot.send_message(chat_id, f"نوع ارز مورد نظر برای انتقال ({'از داخل به خارج' if direction=='داخل' else 'از خارج به داخل'}) را انتخاب کنید:", reply_markup=markup)
+    bot.send_message(chat_id, f"نوع ارز مورد نظر برای انتقال را انتخاب کنید:", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: bool(re.match(r".*\([A-Z]{3}\)\s*$", m.text or "")))
 def ask_amount(message):
     chat_id = message.chat.id
     match = re.search(r"\(([A-Z]{3})\)\s*$", message.text.strip())
     if not match:
-        bot.reply_to(message, "لطفاً ارز را با فرمت صحیح انتخاب کنید (مثلاً: دلار آمریکا (USD)).")
+        bot.reply_to(message, "فرمت صحیح نیست.")
         return
-
     code = match.group(1)
-    if code not in currencies:
-        bot.reply_to(message, "این ارز در فهرست نیست، لطفاً مجدداً انتخاب کنید.")
-        return
-
-    pending[chat_id] = {
-        "direction": pending.get(chat_id, {}).get("direction", None),
-        "currency": code,
-        "awaiting": "amount"
-    }
-
-    back_btn = types.KeyboardButton("🔙 منوی اصلی")
+    pending[chat_id] = {"direction": pending.get(chat_id, {}).get("direction"), "currency": code, "awaiting": "amount"}
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(back_btn)
+    markup.add(types.KeyboardButton("🔙 منوی اصلی"))
+    bot.send_message(chat_id, f"شما ارز «{currencies[code]} ({code})» را انتخاب کردید.\nلطفاً مقدار را وارد کنید:", reply_markup=markup)
 
-    bot.send_message(chat_id,
-                     f"شما ارز «{currencies[code]} ({code})» را انتخاب کردید.\n"
-                     "لطفاً مقدار مورد نظر را به عدد وارد کنید (مثال: 2500 یا 12.5).",
-                     reply_markup=markup)
-
-# ---------------- دریافت مقدار و محاسبه ----------------
 @bot.message_handler(func=lambda m: True)
 def receive_amount(message):
     chat_id = message.chat.id
     text = (message.text or "").strip()
 
-    # ✅ اگر کاربر خواست برگرده به منوی اصلی، در هر حالت برگرد
     if text in ["🔙 منوی اصلی", "/start"]:
         pending.pop(chat_id, None)
         return start(message)
 
     state = pending.get(chat_id)
-
     if state and state.get("awaiting") == "amount":
-        normalized = text.replace(",", "").replace(" ", "")
         try:
-            amount = float(normalized)
+            amount = float(text.replace(",", "").replace(" ", ""))
             if amount <= 0:
                 raise ValueError()
-        except Exception:
-            bot.reply_to(message, "⚠️ لطفاً فقط عدد مثبت وارد کنید (مثلاً: 2500 یا 12.5)")
+        except:
+            bot.reply_to(message, "⚠️ لطفاً فقط عدد مثبت وارد کنید.")
             return
 
-        currency_code = state["currency"]
-        rate, from_cache, age = get_rate(currency_code)
-
+        code = state["currency"]
+        rate, _, _ = get_rate(code)
         if rate is None:
-            bot.send_message(chat_id, "❌ متأسفانه نرخ ارز فعلاً در دسترس نیست. لطفاً کمی بعد تلاش کنید.")
+            bot.send_message(chat_id, "❌ نرخ فعلاً در دسترس نیست.")
             return
 
-        toman_per_unit = rate / 10.0
+        toman_per_unit = rate / 10
         total_toman = amount * toman_per_unit
 
-        note = ""
-        if from_cache:
-            if age is not None:
-                minutes = int(age / 60)
-                note = f"\n(نرخ از کش استفاده شد — به‌روز {minutes} دقیقه قبل)"
-            else:
-                note = "\n(نرخ از کش استفاده شد)"
-
-        bot.send_message(
-            chat_id,
-            f"💰 معادل مبلغ واردشده:\n\n"
-            f"• مقدار: {amount:,} {currency_code}\n"
-            f"• نرخ هر واحد: {toman_per_unit:,.0f} تومان\n"
-            f"• معادل کل: {total_toman:,.0f} تومان{note}\n\n"
-            "✅ اگر مایلید ثبت نهایی انجام شود، اعلام کنید."
+        # ارسال به ادمین برای تأیید
+        confirm_msg = (
+            f"📩 درخواست جدید از کاربر {message.from_user.first_name or ''}\n\n"
+            f"💱 ارز: {currencies[code]} ({code})\n"
+            f"🔢 مقدار: {amount:,}\n"
+            f"💰 معادل: {total_toman:,.0f} تومان\n\n"
+            f"🆔 Chat ID: {chat_id}"
         )
 
+        admin_markup = types.InlineKeyboardMarkup()
+        admin_markup.add(
+            types.InlineKeyboardButton("✅ تأیید", callback_data=f"approve_{chat_id}_{total_toman}"),
+            types.InlineKeyboardButton("❌ رد", callback_data=f"reject_{chat_id}")
+        )
+
+        bot.send_message(ADMIN_ID, confirm_msg, reply_markup=admin_markup)
+        bot.send_message(chat_id, "درخواست شما برای بررسی به ادمین ارسال شد ✅")
         pending.pop(chat_id, None)
         return
 
-    bot.reply_to(message, "برای انتقال ارز، ابتدا از منوی اصلی «💸 انتقال ارز» را انتخاب کنید.")
+    bot.reply_to(message, "برای شروع، «💸 انتقال ارز» را انتخاب کنید.")
+
+# ---------------- هندل پاسخ ادمین ----------------
+@bot.callback_query_handler(func=lambda call: call.data.startswith("approve_") or call.data.startswith("reject_"))
+def admin_response(call):
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "⛔ فقط ادمین می‌تواند پاسخ دهد.")
+        return
+
+    if call.data.startswith("approve_"):
+        _, chat_id, total = call.data.split("_")
+        bot.send_message(int(chat_id), f"✅ درخواست شما تایید شد.\nمبلغ نهایی: {total} تومان.\nلطفاً ادامه پرداخت را انجام دهید.")
+        bot.edit_message_text("✅ درخواست تایید شد.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+    elif call.data.startswith("reject_"):
+        _, chat_id = call.data.split("_")
+        bot.send_message(int(chat_id), "❌ درخواست شما توسط ادمین رد شد.")
+        bot.edit_message_text("❌ درخواست رد شد.", chat_id=call.message.chat.id, message_id=call.message.message_id)
 
 # ---------------- اجرای ربات ----------------
 if __name__ == "__main__":
