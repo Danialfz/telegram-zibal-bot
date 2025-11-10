@@ -1,12 +1,10 @@
 import os
 import re
-import json
 import telebot
 from telebot import types
 
 # ---------------- تنظیمات ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-MERCHANT = os.getenv("MERCHANT")  # فعلاً استفاده نمیشه
 ADMIN_ID = int(os.getenv("ADMIN_ID", "1611406302"))  # آی‌دی ادمین
 
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -57,15 +55,15 @@ def transfer_menu(message):
 # ---------------- انتخاب ارز ----------------
 @bot.message_handler(func=lambda m: m.text in ["🌍 از داخل به خارج", "🏦 از خارج به داخل"])
 def show_currencies(message):
-    direction = "خرید از کاربر" if "داخل" in message.text else "فروش به کاربر"
     chat_id = message.chat.id
+    direction = "متقاضی قصد واریز از داخل به خارج دارد" if "داخل به خارج" in message.text else "متقاضی قصد واریز از خارج به داخل دارد"
     pending[chat_id] = {"direction": direction, "currency": None, "awaiting": None}
 
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     for code, name in currencies.items():
         markup.add(types.KeyboardButton(f"{name} ({code})"))
     markup.add(types.KeyboardButton("🔙 منوی اصلی"))
-    bot.send_message(chat_id, f"نوع ارز مورد نظر را انتخاب کنید:", reply_markup=markup)
+    bot.send_message(chat_id, "نوع ارز مورد نظر را انتخاب کنید:", reply_markup=markup)
 
 # ---------------- دریافت مقدار ----------------
 @bot.message_handler(func=lambda m: bool(re.match(r".*\([A-Z]{3}\)\s*$", m.text or "")))
@@ -130,7 +128,7 @@ def receive_amount(message):
         bot.send_message(
             ADMIN_ID,
             f"📩 درخواست جدید از کاربر @{message.from_user.username or message.from_user.first_name}\n"
-            f"👤 وضعیت: {direction}\n"
+            f"📍 {direction}\n"
             f"💱 ارز: {currencies[currency_code]} ({currency_code})\n"
             f"📊 مقدار: {amount:,}\n"
             f"🆔 Chat ID: {chat_id}\n\n"
