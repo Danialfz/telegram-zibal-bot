@@ -1,8 +1,6 @@
 import os
 import re
 import json
-import time
-import requests
 import telebot
 from telebot import types
 
@@ -59,7 +57,7 @@ def transfer_menu(message):
 # ---------------- انتخاب ارز ----------------
 @bot.message_handler(func=lambda m: m.text in ["🌍 از داخل به خارج", "🏦 از خارج به داخل"])
 def show_currencies(message):
-    direction = "داخل" if "داخل" in message.text else "خارج"
+    direction = "خرید از کاربر" if "داخل" in message.text else "فروش به کاربر"
     chat_id = message.chat.id
     pending[chat_id] = {"direction": direction, "currency": None, "awaiting": None}
 
@@ -110,7 +108,7 @@ def receive_amount(message):
 
     state = pending.get(chat_id)
 
-    # مرحله دریافت مقدار
+    # مرحله دریافت مقدار از کاربر
     if state and state.get("awaiting") == "amount":
         normalized = text.replace(",", "").replace(" ", "")
         try:
@@ -122,6 +120,7 @@ def receive_amount(message):
             return
 
         currency_code = state["currency"]
+        direction = state["direction"]
 
         # ذخیره برای بررسی ادمین
         pending[chat_id]["amount"] = amount
@@ -131,35 +130,36 @@ def receive_amount(message):
         bot.send_message(
             ADMIN_ID,
             f"📩 درخواست جدید از کاربر @{message.from_user.username or message.from_user.first_name}\n"
-            f"Chat ID: {chat_id}\n"
-            f"ارز: {currencies[currency_code]} ({currency_code})\n"
-            f"مقدار: {amount:,}\n\n"
-            f"لطفاً نرخ هر واحد را به تومان وارد کنید (فقط عدد):"
+            f"👤 وضعیت: {direction}\n"
+            f"💱 ارز: {currencies[currency_code]} ({currency_code})\n"
+            f"📊 مقدار: {amount:,}\n"
+            f"🆔 Chat ID: {chat_id}\n\n"
+            "📌 لطفاً مبلغ کل به تومان را وارد کنید (فقط عدد):"
         )
 
         bot.send_message(chat_id, "✅ درخواست شما برای بررسی قیمت ارسال شد. لطفاً منتظر پاسخ ادمین باشید.")
         return
 
-    # مرحله پاسخ ادمین (تعیین نرخ)
+    # مرحله پاسخ ادمین (تعیین مبلغ کل)
     if chat_id == ADMIN_ID and re.match(r"^\d+(\.\d+)?$", text):
-        rate = float(text)
+        total = float(text)
         for user_id, data in pending.items():
-            if data.get("amount") and data.get("currency") and not data.get("rate"):
-                total = data["amount"] * rate
+            if data.get("amount") and data.get("currency") and not data.get("total"):
+                data["total"] = total
+                data["awaiting"] = "confirm"
+
                 bot.send_message(
                     user_id,
-                    f"💰 مبلغ نهایی بر اساس نرخ ادمین:\n\n"
-                    f"• مقدار: {data['amount']:,} {data['currency']}\n"
-                    f"• نرخ هر واحد: {rate:,.0f} تومان\n"
-                    f"• مجموع کل: {total:,.0f} تومان\n\n"
-                    "✅ در صورت تأیید، کلمه (تایید) در صورت عدم تایید کلمه (لغو) را ارسال کنید»."
+                    f"💰 مبلغ نهایی توسط ادمین مشخص شد:\n\n"
+                    f"• مقدار ارز: {data['amount']:,} {data['currency']}\n"
+                    f"• مبلغ کل پرداختی: {total:,.0f} تومان\n\n"
+                    "✅ در صورت تأیید، بنویسید «تأیید» یا در صورت انصراف، بنویسید «لغو»."
                 )
-                data["rate"] = rate
-                data["awaiting"] = "confirm"
-                bot.send_message(chat_id, f"✅ نرخ برای کاربر {user_id} ارسال شد.")
+
+                bot.send_message(chat_id, f"✅ مبلغ کل برای کاربر {user_id} ارسال شد.")
                 return
 
-        bot.send_message(chat_id, "⚠️ در حال حاضر هیچ درخواست فعالی برای نرخ‌گذاری وجود ندارد.")
+        bot.send_message(chat_id, "⚠️ در حال حاضر هیچ درخواست فعالی برای قیمت‌گذاری وجود ندارد.")
         return
 
     # مرحله تأیید یا لغو توسط کاربر
@@ -182,4 +182,3 @@ def receive_amount(message):
 if __name__ == "__main__":
     print("✅ ربات نوسان‌پی در حال اجراست...")
     bot.infinity_polling(timeout=60, long_polling_timeout=30)
-
