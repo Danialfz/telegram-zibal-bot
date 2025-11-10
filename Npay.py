@@ -45,6 +45,17 @@ def back_to_main_markup():
     markup.add(types.KeyboardButton("🔙 بازگشت به منوی اصلی"))
     return markup
 
+def country_menu():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(
+        types.KeyboardButton("🇺🇸 آمریکا"),
+        types.KeyboardButton("🇪🇺 اروپا"),
+        types.KeyboardButton("🇬🇧 انگلیس"),
+        types.KeyboardButton("🇹🇷 ترکیه"),
+        types.KeyboardButton("🔙 بازگشت به منوی اصلی")
+    )
+    return markup
+
 # ---------------- /start ----------------
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -195,7 +206,7 @@ def main_handler(message):
             reply_markup=markup
         )
 
-        bot.send_message(ADMIN_ID, f"✅ نرخ ({rate:,.0f}) ثبت و برای کاربر {target_user} ارسال شد.")
+        bot.send_message(ADMIN_ID, f"✅ نرخ برای کاربر {target_user} ارسال شد.")
         return
 
     # --- کاربر تأیید یا لغو می‌کند (پس از دریافت مجموع) ---
@@ -234,37 +245,6 @@ def main_handler(message):
 
         # هر ورودی دیگر را تذکر بده
         return bot.send_message(chat_id, "لطفاً یکی از دکمه‌ها را انتخاب کنید: «✅ تایید» یا «❌ لغو».")
-
-    # --- ادمین: تایید یا اصلاح پیام اطلاعات کاربر (وقتی اطلاعات به ادمین رسیده) ---
-    if chat_id == ADMIN_ID:
-        # فرمت پیشنهادی: "تایید <user_id>" یا "اصلاح <user_id> <متن_اصلاح>"
-        # تایید
-        m = re.match(r"^\s*تایید\s+(\d+)\s*$", text, re.IGNORECASE)
-        if m:
-            uid = int(m.group(1))
-            if uid in awaiting_admin_fix:
-                del awaiting_admin_fix[uid]
-                bot.send_message(uid, f"✅ اطلاعات شما تایید شد.\n\n💳 لطفاً از طریق لینک زیر پرداخت را انجام دهید:\n{PAYMENT_LINK}")
-                bot.send_message(ADMIN_ID, f"✅ لینک پرداخت برای کاربر {uid} ارسال شد.")
-            else:
-                bot.send_message(ADMIN_ID, "⚠️ برای این کاربر اطلاعاتی در انتظار بررسی وجود ندارد.")
-            return
-
-        # اصلاح
-        m2 = re.match(r"^\s*اصلاح\s+(\d+)\s+(.*)$", text, re.IGNORECASE)
-        if m2:
-            uid = int(m2.group(1))
-            fix_msg = m2.group(2).strip()
-            if uid in awaiting_admin_fix:
-                # ارسال پیام اصلاح به کاربر؛ سپس او دوباره اطلاعات ارسال کند
-                bot.send_message(uid, f"⚠️ پیام از ادمین (نیاز به اصلاح):\n\n{fix_msg}\n\nلطفاً اطلاعات اصلاح‌شده را ارسال کنید.")
-                del awaiting_admin_fix[uid]
-                bot.send_message(ADMIN_ID, f"✅ پیام اصلاح برای کاربر {uid} ارسال شد.")
-            else:
-                bot.send_message(ADMIN_ID, "⚠️ برای این کاربر اطلاعاتی در انتظار بررسی وجود ندارد.")
-            return
-
-    # --- اگر هیچ شرطی برقرار نبود، پیام راهنما بفرست ---
     bot.send_message(chat_id, "برای شروع، گزینه «💸 انتقال ارز» را انتخاب کنید.", reply_markup=main_menu_markup())
 
 # ---------------- اجرای ربات ----------------
