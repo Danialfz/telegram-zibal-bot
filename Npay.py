@@ -215,8 +215,8 @@ def process(m):
                 payment_url = f"https://{RAILWAY_DOMAIN}/pay/{uid}/{total}"
                 bot.send_message(
                     uid,
-                    "✅ اطلاعات شما تایید شد.\n\n"
-                    f"💳 <a href=\"{payment_url}\">برای پرداخت کلیک کنید</a>",
+                    f"✅ اطلاعات شما تایید شد.\n\n"
+                    f"💳 <a href='{payment_url}'>برای پرداخت کلیک کنید</a>",
                     parse_mode="HTML",
                     disable_web_page_preview=True
                 )
@@ -231,6 +231,7 @@ def process(m):
             bot.send_message(ADMIN_ID, "✅ پیام اصلاح ارسال شد.")
             pending[uid]["step"] = "awaiting_info"
             return
+
 
 # ====================== اجرای همزمان Flask و Bot ======================
 def run_flask():
