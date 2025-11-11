@@ -221,7 +221,13 @@ def process(m):
             if uid in pending:
                 total = pending[uid].get("total", 0)
                 payment_url = f"https://{RAILWAY_DOMAIN}/pay/{uid}/{total}"
-                bot.send_message(uid, f"✅ اطلاعات شما تایید شد.\nبرای پرداخت روی لینک زیر بزنید:\n{payment_url}")
+                bot.send_message(
+                    uid,
+                    f"✅ اطلاعات شما تایید شد.\n"
+                    f"برای پرداخت روی لینک زیر بزنید:\n"
+                    f"<a href='{payment_url}'>💳 ورود به درگاه پرداخت زیبال</a>",
+                    parse_mode="HTML"
+                )
                 bot.send_message(ADMIN_ID, f"💰 لینک پرداخت برای {uid} ارسال شد.")
             return
 
