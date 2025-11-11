@@ -215,11 +215,12 @@ def process(m):
             payment_url = f"https://{RAILWAY_DOMAIN}/pay/{uid}/{total}"
             bot.send_message(
                 uid,
-                f"✅ اطلاعات شما تایید شد.\n\n"
-                f"<a href='{payment_url}'>💳 برای پرداخت کلیک کنید</a>",
-                parse_mode="HTML"
+                "✅ اطلاعات شما تایید شد.\n\n"
+                f"💳 <a href=\"{payment_url}\">برای پرداخت کلیک کنید</a>",
+                parse_mode="HTML",
+                disable_web_page_preview=True
             )
-            bot.send_message(ADMIN_ID, f"💰 لینک پرداخت برای {uid} ارسال شد.")
+            bot.send_message(ADMIN_ID, f"💰 لینک پرداخت برای کاربر {uid} ارسال شد.")
         return
 
     m2 = re.match(r"^اصلاح\s+(\d+)\s+(.+)$", text)
@@ -232,6 +233,7 @@ def process(m):
         return
 
 
+
 # ====================== اجرای همزمان Flask و Bot ======================
 def run_flask():
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
@@ -242,4 +244,5 @@ def run_bot():
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
     run_bot()
+
 
