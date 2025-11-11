@@ -16,8 +16,7 @@ except Exception:
     print("ERROR: ADMIN_ID must be an integer in environment variables.")
     sys.exit(1)
 
-PAYMENT_LINK = os.getenv("PAYMENT_LINK", "https://example.com/payment")
-MERCHANT_CODE = os.getenv("MERCHANT_CODE", "123456")  # 🔹 اضافه شد
+MERCHANT_CODE = os.getenv("MERCHANT_CODE", "67fbd99f6f3803001057a0bf")  # 🔹 مرچنت واقعی زیبال
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -150,8 +149,8 @@ def router(msg):
                     bot.send_message(ADMIN_ID, f"⚠️ برای کاربر {uid} مجموع موجود نیست. ابتدا نرخ را وارد کن یا بررسی کن.")
                     return
 
-                # 🔹 لینک پرداخت با مبلغ و مرچنت
-                payment_url = f"{PAYMENT_LINK}?merchant={MERCHANT_CODE}&amount={int(total)}"
+                # 🔹 لینک پرداخت واقعی زیبال بر اساس مرچنت و مبلغ
+                payment_url = f"https://gateway.zibal.ir/start/{MERCHANT_CODE}?amount={int(total)}"
 
                 bot.send_message(uid,
                                  f"✅ اطلاعات شما تأیید شد.\n"
