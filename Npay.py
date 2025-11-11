@@ -3,24 +3,20 @@ import re
 import sys
 import telebot
 from telebot import types
+from flask import Flask, request, jsonify, redirect
+import requests
+import threading
 
-# ---------------- تنظیمات ----------------
+# ====================== تنظیمات اصلی ======================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    print("ERROR: BOT_TOKEN environment variable not set.")
-    sys.exit(1)
-
-try:
-    ADMIN_ID = int(os.getenv("ADMIN_ID", "1611406302"))
-except Exception:
-    print("ERROR: ADMIN_ID must be an integer in environment variables.")
-    sys.exit(1)
-
-MERCHANT_CODE = os.getenv("MERCHANT_CODE", "67fbd99f6f3803001057a0bf")  # 🔹 مرچنت واقعی زیبال
+ADMIN_ID = int(os.getenv("ADMIN_ID", "1611406302"))
+MERCHANT_CODE = os.getenv("MERCHANT_CODE", "67fbd99f6f3803001057a0bf")
+RAILWAY_DOMAIN = os.getenv("RAILWAY_DOMAIN", "primary-production-87fa.up.railway.app")
 
 bot = telebot.TeleBot(BOT_TOKEN)
+app = Flask(__name__)
 
-# ---------------- فهرست ارزها ----------------
+# ====================== اطلاعات ارزها ======================
 currencies = {
     "USD": "دلار آمریکا 🇺🇸",
     "EUR": "یورو 🇪🇺",
@@ -39,239 +35,162 @@ currencies = {
     "QAR": "ریال قطر 🇶🇦"
 }
 
-# ---------------- قالب اطلاعات برای داخل->خارج بر اساس ارز ----------------
-currency_info_template = {
-    "USD": "نام و نام خانوادگی دریافت‌کننده / نام بانک / شماره حساب / SWIFT",
-    "EUR": "نام و نام خانوادگی دریافت‌کننده / کشور / نام بانک / شماره حساب یا IBAN",
-    "GBP": "نام و نام خانوادگی دریافت‌کننده / نام بانک / شماره حساب / Sort Code",
-    "CHF": "نام و نام خانوادگی دریافت‌کننده / نام بانک / شماره حساب یا IBAN / SWIFT",
-    "CAD": "نام و نام خانوادگی دریافت‌کننده / نام بانک / شماره حساب / Transit Number",
-    "AUD": "نام و نام خانوادگی دریافت‌کننده / نام بانک / BSB Code / شماره حساب",
-    "AED": "نام و نام خانوادگی دریافت‌کننده / نام بانک / شماره حساب یا IBAN / SWIFT",
-    "TRY": "نام و نام خانوادگی دریافت‌کننده / نام بانک / شماره IBAN (TR...)",
-    "CNY": "نام و نام خانوادگی دریافت‌کننده / نام بانک / شماره حساب / SWIFT / شهر",
-    "INR": "نام و نام خانوادگی دریافت‌کننده / نام بانک / IFSC / شماره حساب",
-    "JPY": "نام و نام خانوادگی دریافت‌کننده / نام بانک / شماره حساب / SWIFT",
-    "SAR": "نام و نام خانوادگی دریافت‌کننده / نام بانک / شماره IBAN (SA...)",
-    "KWD": "نام و نام خانوادگی دریافت‌کننده / نام بانک / شماره حساب / IBAN (KW...)",
-    "OMR": "نام و نام خانوادگی دریافت‌کننده / نام بانک / شماره حساب / SWIFT",
-    "QAR": "نام و نام خانوادگی دریافت‌کننده / نام بانک / شماره IBAN (QA...)"
-}
-
-# ---------------- حافظهٔ موقت ----------------
 pending = {}
 awaiting_admin_review = set()
 
-# ---------------- کیبوردها ----------------
-def main_menu_markup():
+# ====================== رابط زیبال (ایمن) ======================
+@app.route("/pay/<int:amount>")
+def pay(amount):
+    callback_url = f"https://t.me/YourBotUsername"  # می‌تونی آدرس دلخواه بدی
+    req = {
+        "merchant": MERCHANT_CODE,
+        "amount": amount,
+        "callbackUrl": callback_url,
+        "description": f"پرداخت {amount:,} تومان از طریق ربات نوسان‌پی"
+    }
+
+    try:
+        res = requests.post("https://gateway.zibal.ir/v1/request", json=req)
+        data = res.json()
+        if data.get("result") == 100:
+            track_id = data["trackId"]
+            return redirect(f"https://gateway.zibal.ir/start/{track_id}")
+        else:
+            return jsonify({"error": data})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+# ====================== کیبوردها ======================
+def main_menu():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add(types.KeyboardButton("💸 انتقال ارز"))
     return kb
 
-def direction_markup():
+def direction_menu():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add(types.KeyboardButton("🌍 از داخل به خارج"))
     kb.add(types.KeyboardButton("🏦 از خارج به داخل"))
-    kb.add(types.KeyboardButton("🔙 بازگشت به منو"))
+    kb.add(types.KeyboardButton("🔙 بازگشت"))
     return kb
 
-def back_to_main_markup():
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add(types.KeyboardButton("🔙 بازگشت به منو"))
-    return kb
-
-def confirm_keyboard():
-    kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add(types.KeyboardButton("✅ تایید"), types.KeyboardButton("❌ لغو"))
-    kb.add(types.KeyboardButton("🔙 بازگشت به منو"))
-    return kb
-
-# ---------------- رویدادها ----------------
-@bot.message_handler(commands=['start'])
-def cmd_start(m):
-    pending.pop(m.chat.id, None)
-    awaiting_admin_review.discard(m.chat.id)
+# ====================== شروع ربات ======================
+@bot.message_handler(commands=["start"])
+def start_cmd(m):
     bot.send_message(m.chat.id,
-                     "سلام 👋 به ربات نوسان‌پی خوش آمدید.\nبرای شروع «💸 انتقال ارز» را انتخاب کنید.",
-                     reply_markup=main_menu_markup())
+                     "سلام 👋 خوش اومدی!\nبرای شروع انتقال ارز، گزینه زیر رو انتخاب کن:",
+                     reply_markup=main_menu())
 
-@bot.message_handler(func=lambda msg: msg.text == "💸 انتقال ارز")
-def cmd_transfer(msg):
-    bot.send_message(msg.chat.id, "لطفاً جهت انتقال را انتخاب کنید:", reply_markup=direction_markup())
+@bot.message_handler(func=lambda m: m.text == "💸 انتقال ارز")
+def start_transfer(m):
+    bot.send_message(m.chat.id, "جهت انتقال را انتخاب کنید:", reply_markup=direction_menu())
 
-@bot.message_handler(func=lambda msg: msg.text in ["🌍 از داخل به خارج", "🏦 از خارج به داخل"])
-def choose_currency_list(msg):
-    chat_id = msg.chat.id
-    direction = "از داخل به خارج" if msg.text == "🌍 از داخل به خارج" else "از خارج به داخل"
-    pending[chat_id] = {"direction": direction, "currency": None, "awaiting": None}
+@bot.message_handler(func=lambda m: m.text in ["🌍 از داخل به خارج", "🏦 از خارج به داخل"])
+def choose_currency(m):
+    chat_id = m.chat.id
+    direction = "از داخل به خارج" if "داخل" in m.text else "از خارج به داخل"
+    pending[chat_id] = {"direction": direction, "step": "currency"}
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     for code, name in currencies.items():
         kb.add(types.KeyboardButton(f"{name} ({code})"))
-    kb.add(types.KeyboardButton("🔙 بازگشت به منو"))
     bot.send_message(chat_id, "ارز مورد نظر را انتخاب کنید:", reply_markup=kb)
 
-@bot.message_handler(func=lambda msg: bool(re.match(r".*\([A-Z]{3}\)\s*$", msg.text or "")))
-def ask_amount(msg):
-    chat_id = msg.chat.id
-    t = msg.text.strip()
-    m = re.search(r"\(([A-Z]{3})\)\s*$", t)
-    if not m:
-        return bot.reply_to(msg, "لطفاً از کلیدهای ارز استفاده کنید.")
-    code = m.group(1)
-    state = pending.get(chat_id)
-    if not state:
-        return bot.reply_to(msg, "ابتدا جهت انتقال را انتخاب کنید.")
+@bot.message_handler(func=lambda m: re.search(r"\(([A-Z]{3})\)", m.text or ""))
+def ask_amount(m):
+    chat_id = m.chat.id
+    match = re.search(r"\(([A-Z]{3})\)", m.text)
+    code = match.group(1)
     pending[chat_id]["currency"] = code
-    pending[chat_id]["awaiting"] = "amount"
-    bot.send_message(chat_id, f"شما {currencies.get(code)} را انتخاب کردید.\nلطفاً مقدار (عدد) را وارد کنید:", reply_markup=back_to_main_markup())
+    pending[chat_id]["step"] = "amount"
+    bot.send_message(chat_id, f"مقدار {currencies[code]} را وارد کنید (مثلاً 2500):")
 
-@bot.message_handler(func=lambda msg: True)
-def router(msg):
-    chat_id = msg.chat.id
-    text = (msg.text or "").strip()
-
-    if text in ["🔙 بازگشت به منو", "/start"]:
-        pending.pop(chat_id, None)
-        awaiting_admin_review.discard(chat_id)
-        return cmd_start(msg)
-
-    # ---------- ادمین ----------
-    if chat_id == ADMIN_ID:
-        # ✅ تایید کاربر
-        m1 = re.match(r"^\s*تایید\s+(\d+)\s*$", text, re.IGNORECASE)
-        if m1:
-            uid = int(m1.group(1))
-            if uid in awaiting_admin_review:
-                awaiting_admin_review.discard(uid)
-                p = pending.get(uid, {})
-                total = p.get("total")
-                if total is None:
-                    bot.send_message(ADMIN_ID, f"⚠️ برای کاربر {uid} مجموع موجود نیست. ابتدا نرخ را وارد کن یا بررسی کن.")
-                    return
-
-                # 🔹 لینک پرداخت واقعی زیبال بر اساس مرچنت و مبلغ
-                payment_url = f"https://gateway.zibal.ir/start/{MERCHANT_CODE}?amount={int(total)}"
-
-                bot.send_message(uid,
-                                 f"✅ اطلاعات شما تأیید شد.\n"
-                                 f"برای پرداخت از لینک زیر استفاده کنید:\n\n{payment_url}\n\n"
-                                 f"💰 مبلغ قابل پرداخت: {total:,.0f} تومان")
-                return bot.send_message(ADMIN_ID, f"✅ لینک پرداخت برای {uid} ارسال شد.")
-            return bot.send_message(ADMIN_ID, "⚠️ این کاربر در انتظار بررسی نیست.")
-
-        # 🟡 اصلاح کاربر
-        m2 = re.match(r"^\s*اصلاح\s+(\d+)\s+(.+)$", text, re.IGNORECASE)
-        if m2:
-            uid = int(m2.group(1))
-            reason = m2.group(2).strip()
-            if uid in awaiting_admin_review:
-                pending.setdefault(uid, {})["awaiting"] = "edit"
-                bot.send_message(uid, f"⚠️ پشتیبانی درخواست اصلاح کرد:\n\n{reason}\n\nلطفاً اطلاعات اصلاح‌شده را ارسال کنید (متن ساده).")
-                awaiting_admin_review.discard(uid)
-                return bot.send_message(ADMIN_ID, f"✅ پیام اصلاح برای {uid} ارسال شد.")
-            return bot.send_message(ADMIN_ID, "⚠️ این کاربر در انتظار بررسی نیست.")
-
-        # 🔢 تعیین نرخ
-        if re.match(r"^\d+(\.\d+)?$", text):
-            rate = float(text)
-            target = None
-            for uid, data in pending.items():
-                if data.get("awaiting") == "waiting_rate":
-                    target = uid
-                    break
-            if not target:
-                return bot.send_message(ADMIN_ID, "⚠️ در حال حاضر هیچ درخواستی در انتظار نرخ نیست.")
-            data = pending[target]
-            total = data["amount"] * rate
-            data["rate"] = rate
-            data["total"] = total
-            data["awaiting"] = "confirm"
-            bot.send_message(target,
-                             f"💰 مبلغ نهایی مشخص شد:\n\n"
-                             f"• مقدار: {data['amount']:,} {data['currency']}\n"
-                             f"• مبلغ کل پرداختی: {total:,.0f} تومان\n\n"
-                             "لطفاً با یکی از دکمه‌ها پاسخ دهید:",
-                             reply_markup=confirm_keyboard())
-            return bot.send_message(ADMIN_ID, f"✅ نرخ ثبت شد و مجموع برای کاربر {target} ارسال شد.")
-
-        return bot.send_message(ADMIN_ID,
-                                "راهنما برای ادمین:\n"
-                                "- برای تعیین نرخ: فقط عدد (مثلاً 1234500)\n"
-                                "- برای تایید اطلاعات: تایید <user_id>\n"
-                                "- برای اصلاح: اصلاح <user_id> <متن دلیل>")
-
-    # ---------- سایر کاربران ----------
+@bot.message_handler(func=lambda m: True)
+def process(m):
+    chat_id = m.chat.id
+    text = m.text.strip()
     st = pending.get(chat_id)
 
-    if st and st.get("awaiting") == "edit":
-        if re.search(r"https?://|t\.me|@", text, re.IGNORECASE):
-            try: bot.delete_message(chat_id, msg.message_id)
-            except: pass
-            return bot.send_message(chat_id, "⚠️ لطفاً فقط متن ساده ارسال کنید (بدون لینک یا تگ).")
-        bot.send_message(ADMIN_ID,
-                         f"📦 اطلاعات اصلاح‌شده از کاربر {chat_id}:\n\n{text}\n\n"
-                         f"برای تایید: تایید {chat_id}\nیا برای اصلاح دوباره: اصلاح {chat_id} <متن دلیل>")
-        awaiting_admin_review.add(chat_id)
-        pending[chat_id]["awaiting"] = None
-        return bot.send_message(chat_id, "✅ اطلاعات اصلاح‌شده ارسال شد. منتظر بررسی پشتیبانی باشید.", reply_markup=main_menu_markup())
+    if text == "🔙 بازگشت":
+        pending.pop(chat_id, None)
+        return start_cmd(m)
 
-    if st and st.get("awaiting") == "awaiting_info":
-        if re.search(r"https?://|t\.me|@", text, re.IGNORECASE):
-            try: bot.delete_message(chat_id, msg.message_id)
-            except: pass
-            return bot.send_message(chat_id, "⚠️ لطفاً فقط متن ساده ارسال کنید (بدون لینک یا تگ).")
-        bot.send_message(ADMIN_ID,
-                         f"📦 اطلاعات حساب از کاربر {chat_id}:\n\n{text}\n\n"
-                         f"اگر اوکی است بنویسید: تایید {chat_id}\nیا اگر نیاز به اصلاح است: اصلاح {chat_id} <دلیل>")
-        awaiting_admin_review.add(chat_id)
-        pending[chat_id]["awaiting"] = None
-        return bot.send_message(chat_id, "✅ اطلاعات شما ارسال شد؛ منتظر بررسی پشتیبانی باشید.", reply_markup=main_menu_markup())
+    # === ادمین نرخ تعیین می‌کند ===
+    if chat_id == ADMIN_ID and re.match(r"^\d+(\.\d+)?$", text):
+        for uid, data in pending.items():
+            if data.get("step") == "waiting_rate":
+                rate = float(text)
+                total = int(data["amount"] * rate)
+                data["rate"] = rate
+                data["total"] = total
+                data["step"] = "confirm"
 
-    if st and st.get("awaiting") == "amount":
-        try:
-            amount = float(text.replace(",", "").replace(" ", ""))
-            if amount <= 0:
-                raise ValueError()
-        except:
-            return bot.reply_to(msg, "⚠️ مقدار نامعتبر. لطفاً فقط عدد مثبت وارد کنید (مثلاً 2500).")
-        st["amount"] = amount
-        st["awaiting"] = "waiting_rate"
-        bot.send_message(ADMIN_ID,
-                         f"📩 درخواست جدید از @{msg.from_user.username or msg.from_user.first_name}\n"
-                         f"📍 جهت: {st['direction']}\n"
-                         f"💱 ارز: {currencies[st['currency']]} ({st['currency']})\n"
-                         f"📊 مقدار: {amount:,}\n"
-                         f"🆔 Chat ID: {chat_id}\n\n"
-                         "📌 لطفاً نرخ هر واحد به تومان را وارد کنید (فقط عدد).")
-        return bot.send_message(chat_id, "✅ درخواست ثبت شد؛ منتظر پاسخ ادمین باشید.", reply_markup=main_menu_markup())
+                bot.send_message(uid, f"💰 نرخ هر واحد تعیین شد.\nمجموع پرداختی شما: {total:,} تومان.\nتایید می‌کنید؟ (✅ بله / ❌ خیر)")
+                bot.send_message(ADMIN_ID, f"نرخ ثبت شد برای کاربر {uid}")
+                return
 
-    if st and st.get("awaiting") == "confirm":
-        if text == "✅ تایید":
-            st["awaiting"] = "awaiting_info"
-            currency = st.get("currency")
-            if st.get("direction") == "از داخل به خارج":
-                info = currency_info_template.get(currency, "نام و شماره حساب دریافت‌کننده / نام بانک / کشور")
-                bot.send_message(chat_id,
-                                 "✅ تراکنش تأیید شد.\n\n"
-                                 f"✉️ لطفاً اطلاعات حساب مقصد را به صورت متن ارسال کنید:\n({info})",
-                                 reply_markup=back_to_main_markup())
-            else:
-                bot.send_message(chat_id,
-                                 "✅ تراکنش تأیید شد.\n\n"
-                                 "✉️ لطفاً اطلاعات حساب (برای واریز داخلی) را به صورت متن ارسال کنید:\n"
-                                 "(شماره حساب / شماره کارت / شماره شبا / نام و نام خانوادگی دریافت‌کننده / نام و نام خانوادگی واریزکننده)",
-                                 reply_markup=back_to_main_markup())
+    # === درخواست کاربر ===
+    if st:
+        step = st.get("step")
+
+        if step == "amount":
+            try:
+                st["amount"] = float(text)
+            except:
+                return bot.reply_to(m, "عدد نامعتبر است، فقط مقدار وارد کنید.")
+            st["step"] = "waiting_rate"
+            bot.send_message(ADMIN_ID,
+                             f"📩 درخواست جدید از {chat_id}\n"
+                             f"جهت: {st['direction']}\n"
+                             f"ارز: {st['currency']}\n"
+                             f"مقدار: {st['amount']}\n\n"
+                             f"لطفاً نرخ هر واحد به تومان را وارد کنید.")
+            return bot.send_message(chat_id, "✅ درخواست شما ثبت شد و برای ادمین ارسال شد.")
+
+        if step == "confirm":
+            if "✅" in text or "بله" in text:
+                st["step"] = "awaiting_info"
+                bot.send_message(chat_id, "لطفاً اطلاعات حساب خود را وارد کنید (نام / شماره حساب / ...):")
+            elif "❌" in text or "خیر" in text:
+                pending.pop(chat_id, None)
+                bot.send_message(chat_id, "❌ درخواست لغو شد.")
             return
 
-        if text == "❌ لغو":
-            pending.pop(chat_id, None)
-            return bot.send_message(chat_id, "❌ روند انتقال لغو شد.", reply_markup=main_menu_markup())
+        if step == "awaiting_info":
+            st["info"] = text
+            awaiting_admin_review.add(chat_id)
+            st["step"] = None
+            bot.send_message(ADMIN_ID,
+                             f"📦 اطلاعات کاربر {chat_id}:\n{text}\n\n"
+                             f"برای تایید بنویس: تایید {chat_id}\n"
+                             f"برای اصلاح بنویس: اصلاح {chat_id} دلیل")
+            bot.send_message(chat_id, "✅ اطلاعات شما ارسال شد، منتظر تایید پشتیبانی باشید.")
+            return
 
-        return bot.send_message(chat_id, "لطفاً یکی از دکمه‌ها را انتخاب کنید: «✅ تایید» یا «❌ لغو».")
+    # === بررسی پیام‌های تایید/اصلاح ادمین ===
+    if chat_id == ADMIN_ID:
+        m1 = re.match(r"^تایید\s+(\d+)$", text)
+        if m1:
+            uid = int(m1.group(1))
+            if uid in pending:
+                total = pending[uid].get("total", 0)
+                payment_url = f"https://{RAILWAY_DOMAIN}/pay/{total}"
+                bot.send_message(uid, f"✅ اطلاعات شما تایید شد.\nلینک پرداخت:\n{payment_url}")
+                bot.send_message(ADMIN_ID, f"✅ لینک پرداخت برای {uid} ارسال شد.")
+            return
 
-    return bot.send_message(chat_id, "برای شروع «💸 انتقال ارز» را انتخاب کنید.", reply_markup=main_menu_markup())
+        m2 = re.match(r"^اصلاح\s+(\d+)\s+(.+)$", text)
+        if m2:
+            uid = int(m2.group(1))
+            reason = m2.group(2)
+            bot.send_message(uid, f"⚠️ پشتیبانی درخواست اصلاح داده:\n{reason}\nلطفاً اصلاح و ارسال کنید.")
+            return
 
-# ---------------- اجرا ----------------
-if __name__ == "__main__":
-    print("✅ ربات نوسان‌پی در حال اجراست...")
+# ====================== اجرای موازی Flask + Bot ======================
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+
+def run_bot():
     bot.infinity_polling(timeout=60, long_polling_timeout=30)
+
+if __name__ == "__main__":
+    threading.Thread(target=run_flask).start()
+    run_bot()
