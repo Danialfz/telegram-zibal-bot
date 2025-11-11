@@ -103,7 +103,7 @@ def cmd_start(m):
 def cmd_transfer(msg):
     bot.send_message(msg.chat.id, "لطفاً جهت انتقال را انتخاب کنید:", reply_markup=direction_markup())
 
-@bot.message_handler(func=lambda msg: msg.text in ["🌍 داخل→خارج", "🏦 خارج→داخل"])
+@bot.message_handler(func=lambda msg: msg.text in ["🌍 خارج به داخل", "🏦 داخل به خارج"])
 def choose_currency_list(msg):
     chat_id = msg.chat.id
     direction = "از داخل به خارج" if "داخل→خارج" in msg.text else "از خارج به داخل"
@@ -282,3 +282,4 @@ def router(msg):
 if __name__ == "__main__":
     print("✅ ربات نوسان‌پی در حال اجراست...")
     bot.infinity_polling(timeout=60, long_polling_timeout=30)
+
