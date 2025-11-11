@@ -206,25 +206,31 @@ def process(m):
             return
 
     # ===== بررسی تایید یا اصلاح ادمین =====
-    if chat_id == ADMIN_ID:
-        m1 = re.match(r"^تایید\s+(\d+)$", text)
-        if m1:
-            uid = int(m1.group(1))
-            if uid in pending:
-                total = pending[uid].get("total", 0)
-                payment_url = f"[برای پرداخت کلیک کنید](https://{RAILWAY_DOMAIN}/pay/{uid}/{total})"
-                bot.send_message(uid, f"✅ اطلاعات شما تایید شد.\n{payment_url}", parse_mode="Markdown")
-                bot.send_message(ADMIN_ID, f"💰 لینک پرداخت برای {uid} ارسال شد.")
-            return
+   if chat_id == ADMIN_ID:
+    m1 = re.match(r"^تایید\s+(\d+)$", text)
+    if m1:
+        uid = int(m1.group(1))
+        if uid in pending:
+            total = pending[uid].get("total", 0)
+            payment_url = f"https://{RAILWAY_DOMAIN}/pay/{uid}/{total}"
+            bot.send_message(
+                uid,
+                f"✅ اطلاعات شما تایید شد.\n\n"
+                f"<a href='{payment_url}'>💳 برای پرداخت کلیک کنید</a>",
+                parse_mode="HTML"
+            )
+            bot.send_message(ADMIN_ID, f"💰 لینک پرداخت برای {uid} ارسال شد.")
+        return
 
-        m2 = re.match(r"^اصلاح\s+(\d+)\s+(.+)$", text)
-        if m2:
-            uid = int(m2.group(1))
-            reason = m2.group(2)
-            bot.send_message(uid, f"⚠️ اطلاعات نیاز به اصلاح دارد:\n{reason}")
-            bot.send_message(ADMIN_ID, "✅ پیام اصلاح ارسال شد.")
-            pending[uid]["step"] = "awaiting_info"
-            return
+    m2 = re.match(r"^اصلاح\s+(\d+)\s+(.+)$", text)
+    if m2:
+        uid = int(m2.group(1))
+        reason = m2.group(2)
+        bot.send_message(uid, f"⚠️ اطلاعات نیاز به اصلاح دارد:\n{reason}")
+        bot.send_message(ADMIN_ID, "✅ پیام اصلاح ارسال شد.")
+        pending[uid]["step"] = "awaiting_info"
+        return
+
 
 # ====================== اجرای همزمان Flask و Bot ======================
 def run_flask():
@@ -236,3 +242,4 @@ def run_bot():
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
     run_bot()
+
