@@ -1,4 +1,4 @@
-# Npay.py (نسخه‌ی نهایی با اصلاح callback زیبال و پشتیبانی از "فقط وارد کردن مبلغ" توسط ادمین)
+# =============== Npay.py (ورژن نهایی و سازگار با زیبال و Railway) ===============
 import os
 import re
 import telebot
@@ -11,7 +11,7 @@ import threading
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "1611406302"))
 MERCHANT = os.getenv("MERCHANT")
-RAILWAY_DOMAIN = os.getenv("RAILWAY_DOMAIN")
+RAILWAY_DOMAIN = os.getenv("RAILWAY_DOMAIN")  # مقدار: bot.navasanpay.com
 
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
@@ -37,8 +37,8 @@ currencies = {
 
 # ====================== قالب اطلاعات حساب ======================
 currency_info_template = {
-    "USD": "👤 نام و نام خانوادگی گیرنده\n🏦 نام بانک\n💳 شماره حساب یا IBAN\n🌍 کشور / شهر بانک\n🔢 SWIFT Code",
-    "EUR": "👤 نام و نام خانوادگی گیرنده\n🏦 نام بانک\n💳 شماره IBAN\n🌍 کشور بانک\n🔢 SWIFT / BIC Code",
+    "USD": "👤 نام گیرنده\n🏦 نام بانک\n💳 شماره حساب یا IBAN\n🌍 کشور / شهر بانک\n🔢 SWIFT Code",
+    "EUR": "👤 نام گیرنده\n🏦 نام بانک\n💳 شماره IBAN\n🌍 کشور بانک\n🔢 SWIFT / BIC Code",
     "GBP": "👤 نام گیرنده\n🏦 نام بانک\n💳 شماره حساب\n🏷 Sort Code",
     "CHF": "👤 نام گیرنده\n🏦 نام بانک\n💳 شماره حساب یا IBAN\n🔢 SWIFT Code\n🌍 کشور بانک",
     "CAD": "👤 نام گیرنده\n🏦 نام بانک\n💳 شماره حساب\n🏷 Transit Number\n🌍 کشور / شهر بانک",
@@ -63,8 +63,8 @@ last_target_for_admin = None
 @app.route("/pay/<int:user_id>/<int:amount>")
 def pay(user_id, amount):
     try:
-        # ✅ اصلاح callback برای سازگاری با Railway (رفع خطای "فرمت IP معتبر نیست")
-        callback_url = f"https://primary-production-AVfa.up.railway.app/verify/{user_id}"
+        # ✅ استفاده از دامنه‌ی navasanpay.com برای جلوگیری از خطای 106
+        callback_url = f"https://{RAILWAY_DOMAIN}/verify/{user_id}"
 
         req = {
             "merchant": MERCHANT,
@@ -81,6 +81,7 @@ def pay(user_id, amount):
             return redirect(f"https://gateway.zibal.ir/start/{track_id}")
         else:
             return jsonify({"error": f"❌ خطا از زیبال: {data}"}), 400
+
     except Exception as e:
         return jsonify({"error": f"⚠️ خطا در ساخت لینک پرداخت: {str(e)}"}), 500
 
@@ -104,21 +105,16 @@ def verify_payment(user_id):
         else:
             bot.send_message(user_id, "❌ پرداخت ناموفق بود یا لغو شد.")
             return f"❌ پرداخت ناموفق: {data}"
+
     except Exception as e:
         return f"⚠️ خطا در بررسی پرداخت: {str(e)}"
 
 
-# ====================== سایر بخش‌ها ======================
-# (تمام قسمت‌های بعدی مثل منوی کاربر، منطق ادمین و threading همانند نسخه‌ی قبلی باقی مانده‌اند)
-# ⚠️ لازم نیست تغییری در سایر بخش‌ها بدهی.
-
+# ====================== منو و سایر بخش‌ها ======================
 def main_menu():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("💸 انتقال ارز")
     return kb
-
-# ... (باقی کد دقیقاً مثل نسخه‌ی قبل توی فایل خودت بماند) ...
-
 
 # ====================== اجرای همزمان Flask و Bot ======================
 def run_flask():
