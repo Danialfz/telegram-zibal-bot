@@ -60,8 +60,6 @@ currency_info_template = {
 }
 
 pending = {}
-last_target_for_admin = None
-support_sessions = {}  # {user_id: "active"}
 
 # ---------------- کیبوردها ----------------
 def main_menu():
@@ -132,44 +130,34 @@ def start(m):
 # === ارتباط با پشتیبانی ===
 @bot.message_handler(func=lambda m: m.text == "💬 ارتباط با پشتیبانی")
 def support_start(m):
-    user_id = m.chat.id
-    support_sessions[user_id] = "active"
-    bot.send_message(user_id, "💬 لطفاً پیام خود را ارسال کنید. هر پیامی بفرستید برای پشتیبانی ارسال خواهد شد.\nبرای خروج بنویسید: پایان پشتیبانی")
-    bot.send_message(ADMIN_ID, f"📩 کاربر {user_id} وارد چت پشتیبانی شد.")
-    return
+    bot.send_message(m.chat.id, "💬 لطفاً پیام یا تصویر خود را ارسال کنید تا برای پشتیبانی ارسال شود.")
+    bot.send_message(ADMIN_ID, f"📩 کاربر {m.chat.id} وارد گفت‌وگو با پشتیبانی شد.")
+    pending[m.chat.id] = {"support": True}
 
-# دریافت پیام پشتیبانی از کاربر
-@bot.message_handler(func=lambda m: m.chat.id in support_sessions and support_sessions[m.chat.id] == "active", content_types=["text", "photo", "document"])
-def support_chat(m):
-    if m.text and "پایان پشتیبانی" in m.text:
-        support_sessions.pop(m.chat.id, None)
-        bot.send_message(m.chat.id, "✅ پشتیبانی پایان یافت.", reply_markup=main_menu())
-        bot.send_message(ADMIN_ID, f"❌ کاربر {m.chat.id} از چت پشتیبانی خارج شد.")
-        return
-
-    # فوروارد پیام به ادمین
+@bot.message_handler(func=lambda m: pending.get(m.chat.id, {}).get("support") is True, content_types=["text", "photo", "document"])
+def forward_to_admin(m):
     bot.forward_message(ADMIN_ID, m.chat.id, m.message_id)
     bot.send_message(ADMIN_ID, f"📨 پیام از کاربر {m.chat.id}")
-    global last_target_for_admin
-    last_target_for_admin = m.chat.id
+    bot.send_message(m.chat.id, "✅ پیام شما برای پشتیبانی ارسال شد.", reply_markup=main_menu())
 
-# پاسخ از ادمین در چت پشتیبانی
-@bot.message_handler(func=lambda m: m.chat.id == ADMIN_ID and last_target_for_admin is not None, content_types=["text", "photo", "document"])
-def admin_support_reply(m):
-    target = last_target_for_admin
-    if m.text and "پایان پشتیبانی" in m.text:
-        last_target_for_admin = None
-        bot.send_message(ADMIN_ID, "✅ پشتیبانی بسته شد.")
+# --- پاسخ ادمین به کاربر با آیدی ---
+@bot.message_handler(func=lambda m: m.chat.id == ADMIN_ID)
+def admin_reply(m):
+    # ✅ ارسال پاسخ با الگوی: پاسخ <id> <متن>
+    match = re.match(r"^پاسخ\s+(\d+)\s+(.+)$", m.text or "")
+    if match:
+        user_id = int(match.group(1))
+        text = match.group(2)
+        try:
+            bot.send_message(user_id, f"📩 پیام از پشتیبانی:\n\n{text}")
+            bot.send_message(ADMIN_ID, f"✅ پاسخ برای {user_id} ارسال شد.")
+        except Exception as e:
+            bot.send_message(ADMIN_ID, f"❌ خطا در ارسال پیام: {e}")
         return
-    bot.copy_message(target, ADMIN_ID, m.message_id)
-    bot.send_message(ADMIN_ID, "✅ پیام شما به کاربر ارسال شد.")
 
-# === سایر بخش‌های قبلی بدون تغییر ===
-@bot.message_handler(func=lambda m: m.text == "💸 انتقال ارز")
-def start_transfer(m):
-    bot.send_message(m.chat.id, "جهت انتقال را انتخاب کنید:", reply_markup=direction_menu())
+    # سایر منطق‌های ادمین (تعیین نرخ، تأیید و ...)
+    # بقیه‌ی کد تو نسخه‌ی قبلت بدون تغییر می‌مونه
 
-# ادامه‌ی کد تو همان نسخه‌ی قبلی باقی می‌ماند (از قسمت choose_currency به بعد)
 
 # ---------------- اجرای همزمان ----------------
 def run_flask():
@@ -180,6 +168,6 @@ def run_bot():
     bot.infinity_polling(timeout=60, long_polling_timeout=30)
 
 if __name__ == "__main__":
-    print("✅ Npay bot started with Support Chat")
+    print("✅ Npay bot started with Support via ID")
     threading.Thread(target=run_flask).start()
     run_bot()
