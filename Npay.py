@@ -65,7 +65,7 @@ last_target_for_admin = None
 # ---------------- کیبوردها ----------------
 def main_menu():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("💸 انتقال ارز", "💬 ارتباط با پشتیبانی")
+    kb.add("💸 انتقال ارز")
     return kb
 
 def direction_menu():
@@ -122,96 +122,159 @@ def verify_payment(user_id):
         bot.send_message(ADMIN_ID, f"❌ پرداخت ناموفق از کاربر {user_id}: {data}")
         return "Failed", 400
 
-# ---------------- پشتیبانی ----------------
-@bot.message_handler(func=lambda m: m.text == "💬 ارتباط با پشتیبانی")
-def contact_support(m):
-    pending[m.chat.id] = {"support": True}
-    bot.send_message(m.chat.id, "💬 لطفاً پیام خود را برای پشتیبانی ارسال کنید (متن یا تصویر).")
+# ---------------- منطق ربات ----------------
+@bot.message_handler(commands=["start"])
+def start(m):
+    pending.pop(m.chat.id, None)
+    bot.send_message(m.chat.id, "سلام 👋 برای شروع انتقال ارز گزینه زیر را انتخاب کنید:", reply_markup=main_menu())
 
-@bot.message_handler(func=lambda m: pending.get(m.chat.id, {}).get("support") is True, content_types=["text", "photo", "document"])
-def forward_support(m):
-    bot.forward_message(ADMIN_ID, m.chat.id, m.message_id)
-    bot.send_message(ADMIN_ID, f"📩 پیام جدید از کاربر {m.chat.id}")
-    bot.send_message(m.chat.id, "✅ پیام شما به پشتیبانی ارسال شد.", reply_markup=main_menu())
+@bot.message_handler(func=lambda m: m.text == "💸 انتقال ارز")
+def start_transfer(m):
+    bot.send_message(m.chat.id, "جهت انتقال را انتخاب کنید:", reply_markup=direction_menu())
 
-# --- پاسخ ادمین با دستور «پاسخ <id> <متن>»
-@bot.message_handler(func=lambda m: m.chat.id == ADMIN_ID)
-def admin_responder(m):
-    text = (m.text or "").strip()
+@bot.message_handler(func=lambda m: m.text in ["🌍 از داخل به خارج", "🏦 از خارج به داخل"])
+def choose_currency(m):
+    direction = "از داخل به خارج" if "داخل به خارج" in m.text else "از خارج به داخل"
+    pending[m.chat.id] = {"direction": direction, "step": "currency"}
+    kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    for c, n in currencies.items():
+        kb.add(f"{n} ({c})")
+    kb.add("🔙 بازگشت")
+    bot.send_message(m.chat.id, "ارز مورد نظر را انتخاب کنید:", reply_markup=kb)
 
-    match = re.match(r"^پاسخ\s+(\d+)\s+(.+)$", text)
-    if match:
-        uid = int(match.group(1))
-        msg = match.group(2)
-        try:
-            bot.send_message(uid, f"📩 پیام از پشتیبانی:\n\n{msg}")
-            bot.send_message(ADMIN_ID, f"✅ پاسخ برای کاربر {uid} ارسال شد.")
-        except Exception as e:
-            bot.send_message(ADMIN_ID, f"❌ خطا در ارسال پاسخ: {e}")
-        return
-
-    # ادامه‌ی منطق ادمین (نرخ، تایید و ...)
-    handle_admin_commands(m, text)
-
-# ---------------- منطق اصلی ادمین ----------------
-def handle_admin_commands(m, text):
-    global last_target_for_admin
+@bot.message_handler(func=lambda m: re.search(r"\(([A-Z]{3})\)", m.text or ""))
+def got_currency(m):
     chat_id = m.chat.id
+    match = re.search(r"\(([A-Z]{3})\)", m.text)
+    if not match: return
+    code = match.group(1)
+    if chat_id not in pending: return
+    pending[chat_id]["currency"] = code
+    pending[chat_id]["step"] = "amount"
+    bot.send_message(chat_id, f"مقدار {currencies.get(code)} را وارد کنید (مثلاً 2500):")
 
-    # نرخ
-    m_rate = re.match(r"^نرخ\s+(\d+)\s+([\d.]+)$", text)
-    if m_rate:
-        uid = int(m_rate.group(1))
-        rate = float(m_rate.group(2))
-        if uid in pending and pending[uid].get("step") == "waiting_rate":
-            amount = pending[uid]["amount"]
-            total = int(amount * rate)
-            pending[uid].update({"rate": rate, "total": total, "step": "confirm"})
-            bot.send_message(uid, f"💰 مجموع پرداختی: {total:,} تومان\nتایید می‌کنید؟", reply_markup=confirm_keyboard())
-            bot.send_message(ADMIN_ID, f"✅ نرخ {rate} برای کاربر {uid} ثبت شد.")
-            last_target_for_admin = uid
+@bot.message_handler(func=lambda m: True)
+def main_handler(m):
+    chat_id = m.chat.id
+    text = (m.text or "").strip()
+    st = pending.get(chat_id)
+
+    if text == "🔙 بازگشت":
+        pending.pop(chat_id, None)
+        return start(m)
+
+    # ==== ادمین ====
+    if chat_id == ADMIN_ID:
+        # 🔹 نرخ
+        m_rate = re.match(r"^نرخ\s+(\d+)\s+([\d.]+)$", text)
+        if m_rate:
+            uid = int(m_rate.group(1))
+            rate = float(m_rate.group(2))
+            if uid in pending and pending[uid].get("step") == "waiting_rate":
+                amount = pending[uid]["amount"]
+                total = int(amount * rate)
+                pending[uid].update({"rate": rate, "total": total, "step": "confirm"})
+                bot.send_message(uid, f"💰 مجموع پرداختی: {total:,} تومان\nتایید می‌کنید؟", reply_markup=confirm_keyboard())
+                bot.send_message(ADMIN_ID, f"✅ نرخ {rate} برای کاربر {uid} ثبت شد.")
+                global last_target_for_admin
+                last_target_for_admin = uid
+            return
+
+        # 🔹 تایید نهایی
+        m_confirm = re.match(r"^تایید\s+(\d+)$", text)
+        if m_confirm:
+            uid = int(m_confirm.group(1))
+            if uid not in pending: return bot.send_message(ADMIN_ID, "کاربر پیدا نشد.")
+            data = pending[uid]
+            total = data.get("total", 0)
+            direction = data.get("direction")
+
+            if direction == "از داخل به خارج":
+                rial_total = int(total * 10)
+                callback_url = f"https://{RAILWAY_DOMAIN}/verify/{uid}"
+                req = {"merchant": MERCHANT, "amount": rial_total, "callbackUrl": callback_url,
+                       "description": f"پرداخت {total:,} تومان از طریق ربات نوسان‌پی"}
+                res = requests.post("https://gateway.zibal.ir/v1/request", json=req, timeout=15)
+                d = res.json()
+                if d.get("result") == 100:
+                    pay_link = f"https://gateway.zibal.ir/start/{d['trackId']}"
+                    bot.send_message(uid, f"✅ اطلاعات تایید شد.\n💳 <a href=\"{pay_link}\">برای پرداخت کلیک کنید</a>",
+                                     parse_mode="HTML", disable_web_page_preview=True)
+                    bot.send_message(ADMIN_ID, f"💰 لینک پرداخت برای {uid} ارسال شد.")
+                else:
+                    bot.send_message(ADMIN_ID, f"❌ خطا از زیبال: {d}")
+                return
+
+            elif direction == "از خارج به داخل":
+                bot.send_message(uid, "✅ اطلاعات تایید شد.\n\n💬 منتظر پیام پشتیبانی باشید تا اطلاعات واریز برای شما ارسال شود.")
+                bot.send_message(ADMIN_ID,
+                                 f"📦 کاربر {uid} مسیر از خارج به داخل را تایید کرد.\n"
+                                 f"لطفاً اطلاعات حساب دریافت وجه را برای او ارسال کنید.\n"
+                                 f"(هر متنی بفرستید برای او فوروارد می‌شود.)")
+                pending[uid]["step"] = "awaiting_manual_payment"
+                last_target_for_admin = uid
+                return
+
+        # 🔹 درخواست اصلاح اطلاعات
+        m_fix = re.match(r"^اصلاح\s+(\d+)\s+(.+)$", text)
+        if m_fix:
+            uid = int(m_fix.group(1))
+            reason = m_fix.group(2)
+            if uid in pending:
+                pending[uid]["step"] = "awaiting_correction"
+                bot.send_message(uid,
+                    f"⚠️ ادمین درخواست اصلاح اطلاعات داده است:\n\n📝 {reason}\n\n"
+                    "لطفاً اطلاعات اصلاح‌شده را دوباره ارسال کنید.")
+                bot.send_message(ADMIN_ID, f"📩 پیام اصلاح برای کاربر {uid} ارسال شد.")
+            else:
+                bot.send_message(ADMIN_ID, "❌ کاربر مورد نظر یافت نشد.")
+            return
+
+        # 🔹 پیام دستی پشتیبانی
+        if last_target_for_admin and last_target_for_admin in pending and pending[last_target_for_admin].get("step") == "awaiting_manual_payment":
+            bot.send_message(last_target_for_admin, f"📩 پیام از پشتیبانی:\n\n{text}")
+            return bot.send_message(ADMIN_ID, "✅ پیام برای کاربر ارسال شد.")
         return
 
-    # تایید و پرداخت
-    m_confirm = re.match(r"^تایید\s+(\d+)$", text)
-    if m_confirm:
-        uid = int(m_confirm.group(1))
-        if uid not in pending:
-            return bot.send_message(chat_id, "کاربر پیدا نشد.")
-        data = pending[uid]
-        total = data.get("total", 0)
-        direction = data.get("direction")
+    # ==== کاربر ====
+    if not st:
+        return bot.send_message(chat_id, "برای شروع «💸 انتقال ارز» را انتخاب کنید.", reply_markup=main_menu())
 
-        if direction == "از داخل به خارج":
-            rial_total = int(total * 10)
-            callback_url = f"https://{RAILWAY_DOMAIN}/verify/{uid}"
-            req = {"merchant": MERCHANT, "amount": rial_total, "callbackUrl": callback_url,
-                   "description": f"پرداخت {total:,} تومان از طریق ربات نوسان‌پی"}
-            res = requests.post("https://gateway.zibal.ir/v1/request", json=req, timeout=15)
-            d = res.json()
-            if d.get("result") == 100:
-                pay_link = f"https://gateway.zibal.ir/start/{d['trackId']}"
-                bot.send_message(uid, f"✅ اطلاعات تایید شد.\n💳 <a href=\"{pay_link}\">برای پرداخت کلیک کنید</a>",
-                                 parse_mode="HTML", disable_web_page_preview=True)
-                bot.send_message(ADMIN_ID, f"💰 لینک پرداخت برای {uid} ارسال شد.")
+    step = st.get("step")
+
+    if step == "amount":
+        try:
+            st["amount"] = float(text.replace(",", ""))
+        except:
+            return bot.reply_to(m, "عدد معتبر وارد کنید.")
+        st["step"] = "waiting_rate"
+        bot.send_message(ADMIN_ID,
+            f"📩 درخواست جدید:\nuser_id={chat_id}\nجهت: {st['direction']}\nارز: {st['currency']}\nمقدار: {st['amount']}\n\n"
+            f"برای تعیین نرخ بنویس: نرخ {chat_id} <نرخ>")
+        return bot.send_message(chat_id, "✅ درخواست شما ثبت شد و برای ادمین ارسال شد.")
+
+    if step == "confirm":
+        if text in ("✅ تایید", "تایید", "بله"):
+            st["step"] = "awaiting_info"
+            if st["direction"] == "از داخل به خارج":
+                info_text = currency_info_template.get(st["currency"], "👤 اطلاعات گیرنده را وارد کنید:")
             else:
-                bot.send_message(ADMIN_ID, f"❌ خطا از زیبال: {d}")
-            return
+                info_text = "👤 لطفاً اطلاعات فرستنده را وارد کنید (نام و شماره حساب در خارج از کشور)"
+            bot.send_message(chat_id, f"لطفاً اطلاعات زیر را ارسال کنید:\n\n{info_text}")
+        elif text in ("❌ لغو", "لغو"):
+            pending.pop(chat_id, None)
+            bot.send_message(chat_id, "درخواست لغو شد.", reply_markup=main_menu())
+        return
 
-        elif direction == "از خارج به داخل":
-            bot.send_message(uid, "✅ اطلاعات تایید شد.\n💬 منتظر پیام پشتیبانی باشید.")
-            bot.send_message(ADMIN_ID,
-                             f"📦 کاربر {uid} مسیر از خارج به داخل را تایید کرد.\nبرای او اطلاعات واریز بفرستید با دستور:\nپاسخ {uid} <متن>")
-            pending[uid]["step"] = "awaiting_manual_payment"
-            last_target_for_admin = uid
-            return
+    if step in ("awaiting_info", "awaiting_correction"):
+        st["info"] = text
+        st["step"] = None
+        bot.send_message(ADMIN_ID, f"📦 اطلاعات حساب از کاربر {chat_id}:\n\n{text}\n\nبرای تایید بنویس: تایید {chat_id}\n"
+                                   f"یا در صورت نیاز به اصلاح بنویس: اصلاح {chat_id} <دلیل>")
+        bot.send_message(chat_id, "✅ اطلاعات شما ارسال شد و در انتظار بررسی ادمین است.")
+        return
 
-# ---------------- بقیه منطق کاربر (مثل کد قبلی تو) ----------------
-# (می‌تونی عین کد بالای خودت رو بعد از این تابع paste کنی، از بخش:
-# @bot.message_handler(commands=['start'])
-# تا انتهای main_handler — بدون تغییر نیاز.)
-
-# ---------------- اجرا ----------------
+# ---------------- اجرای همزمان ----------------
 def run_flask():
     port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
@@ -220,6 +283,6 @@ def run_bot():
     bot.infinity_polling(timeout=60, long_polling_timeout=30)
 
 if __name__ == "__main__":
-    print("✅ Npay bot started with full support + admin replies")
+    print("✅ Npay bot started")
     threading.Thread(target=run_flask).start()
     run_bot()
