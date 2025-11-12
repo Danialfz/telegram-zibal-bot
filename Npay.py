@@ -84,8 +84,11 @@ def confirm_keyboard():
 @app.route("/pay/<int:user_id>/<int:amount>")
 def pay(user_id, amount):
     try:
+        # 🔹 تبدیل تومان به ریال
+        rial_amount = int(amount * 10)
+
         callback_url = f"https://{RAILWAY_DOMAIN}/verify/{user_id}"
-        req = {"merchant": MERCHANT, "amount": amount, "callbackUrl": callback_url,
+        req = {"merchant": MERCHANT, "amount": rial_amount, "callbackUrl": callback_url,
                "description": f"پرداخت {amount:,} تومان از طریق ربات نوسان‌پی"}
         res = requests.post("https://gateway.zibal.ir/v1/request", json=req, timeout=15)
         data = res.json()
@@ -188,8 +191,11 @@ def main_handler(m):
 
             # 💳 از داخل به خارج → لینک زیبال
             if direction == "از داخل به خارج":
+                # 🔹 تبدیل تومان به ریال
+                rial_total = int(total * 10)
+
                 callback_url = f"https://{RAILWAY_DOMAIN}/verify/{uid}"
-                req = {"merchant": MERCHANT, "amount": total, "callbackUrl": callback_url,
+                req = {"merchant": MERCHANT, "amount": rial_total, "callbackUrl": callback_url,
                        "description": f"پرداخت {total:,} تومان از طریق ربات نوسان‌پی"}
                 res = requests.post("https://gateway.zibal.ir/v1/request", json=req, timeout=15)
                 d = res.json()
