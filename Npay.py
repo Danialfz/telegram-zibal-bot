@@ -65,7 +65,7 @@ last_target_for_admin = None
 @app.route("/pay/<int:user_id>/<int:amount>")
 def pay(user_id, amount):
     try:
-        callback_url = "https://zibal.ir"
+        callback_url = f"https://{RAILWAY_DOMAIN}/verify/{user_id}"
         req = {
             "merchant": MERCHANT,
             "amount": amount,
@@ -359,5 +359,6 @@ def run_bot():
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
     run_bot()
+
 
 
