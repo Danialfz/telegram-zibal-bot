@@ -17,8 +17,8 @@ try:
 except Exception:
     raise RuntimeError("ADMIN_ID must be integer")
 
-MERCHANT = os.getenv("MERCHANT")            # مثال: 67fbd99f6f3803001057a0bf
-RAILWAY_DOMAIN = os.getenv("RAILWAY_DOMAIN")  # مثال: bot.navasanpay.com یا navasanpay.com
+MERCHANT = os.getenv("MERCHANT")            
+RAILWAY_DOMAIN = os.getenv("RAILWAY_DOMAIN") 
 
 if not MERCHANT:
     raise RuntimeError("MERCHANT env var is required")
@@ -418,3 +418,4 @@ if __name__ == "__main__":
     print("✅ Npay bot started")
     threading.Thread(target=run_flask).start()
     run_bot()
+
