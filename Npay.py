@@ -84,9 +84,7 @@ def confirm_keyboard():
 @app.route("/pay/<int:user_id>/<int:amount>")
 def pay(user_id, amount):
     try:
-        # 🔹 تبدیل تومان به ریال
         rial_amount = int(amount * 10)
-
         callback_url = f"https://{RAILWAY_DOMAIN}/verify/{user_id}"
         req = {"merchant": MERCHANT, "amount": rial_amount, "callbackUrl": callback_url,
                "description": f"پرداخت {amount:,} تومان از طریق ربات نوسان‌پی"}
@@ -167,6 +165,7 @@ def main_handler(m):
 
     # ==== ادمین ====
     if chat_id == ADMIN_ID:
+        # 🔹 نرخ
         m_rate = re.match(r"^نرخ\s+(\d+)\s+([\d.]+)$", text)
         if m_rate:
             uid = int(m_rate.group(1))
@@ -181,6 +180,7 @@ def main_handler(m):
                 last_target_for_admin = uid
             return
 
+        # 🔹 تایید نهایی
         m_confirm = re.match(r"^تایید\s+(\d+)$", text)
         if m_confirm:
             uid = int(m_confirm.group(1))
@@ -189,11 +189,8 @@ def main_handler(m):
             total = data.get("total", 0)
             direction = data.get("direction")
 
-            # 💳 از داخل به خارج → لینک زیبال
             if direction == "از داخل به خارج":
-                # 🔹 تبدیل تومان به ریال
                 rial_total = int(total * 10)
-
                 callback_url = f"https://{RAILWAY_DOMAIN}/verify/{uid}"
                 req = {"merchant": MERCHANT, "amount": rial_total, "callbackUrl": callback_url,
                        "description": f"پرداخت {total:,} تومان از طریق ربات نوسان‌پی"}
@@ -208,7 +205,6 @@ def main_handler(m):
                     bot.send_message(ADMIN_ID, f"❌ خطا از زیبال: {d}")
                 return
 
-            # 💵 از خارج به داخل → ارسال دستی اطلاعات از طرف ادمین
             elif direction == "از خارج به داخل":
                 bot.send_message(uid, "✅ اطلاعات تایید شد.\n\n💬 منتظر پیام پشتیبانی باشید تا اطلاعات واریز برای شما ارسال شود.")
                 bot.send_message(ADMIN_ID,
@@ -219,11 +215,25 @@ def main_handler(m):
                 last_target_for_admin = uid
                 return
 
-        # هر پیام بعدی ادمین برای کاربر آخرین مرحله “awaiting_manual_payment” ارسال می‌شود
+        # 🔹 درخواست اصلاح اطلاعات
+        m_fix = re.match(r"^اصلاح\s+(\d+)\s+(.+)$", text)
+        if m_fix:
+            uid = int(m_fix.group(1))
+            reason = m_fix.group(2)
+            if uid in pending:
+                pending[uid]["step"] = "awaiting_correction"
+                bot.send_message(uid,
+                    f"⚠️ ادمین درخواست اصلاح اطلاعات داده است:\n\n📝 {reason}\n\n"
+                    "لطفاً اطلاعات اصلاح‌شده را دوباره ارسال کنید.")
+                bot.send_message(ADMIN_ID, f"📩 پیام اصلاح برای کاربر {uid} ارسال شد.")
+            else:
+                bot.send_message(ADMIN_ID, "❌ کاربر مورد نظر یافت نشد.")
+            return
+
+        # 🔹 پیام دستی پشتیبانی
         if last_target_for_admin and last_target_for_admin in pending and pending[last_target_for_admin].get("step") == "awaiting_manual_payment":
             bot.send_message(last_target_for_admin, f"📩 پیام از پشتیبانی:\n\n{text}")
             return bot.send_message(ADMIN_ID, "✅ پیام برای کاربر ارسال شد.")
-
         return
 
     # ==== کاربر ====
@@ -256,11 +266,12 @@ def main_handler(m):
             bot.send_message(chat_id, "درخواست لغو شد.", reply_markup=main_menu())
         return
 
-    if step == "awaiting_info":
+    if step in ("awaiting_info", "awaiting_correction"):
         st["info"] = text
         st["step"] = None
-        bot.send_message(ADMIN_ID, f"📦 اطلاعات حساب از کاربر {chat_id}:\n\n{text}\n\nبرای تایید بنویس: تایید {chat_id}")
-        bot.send_message(chat_id, "✅ اطلاعات شما ارسال شد و در انتظار تایید ادمین است.")
+        bot.send_message(ADMIN_ID, f"📦 اطلاعات حساب از کاربر {chat_id}:\n\n{text}\n\nبرای تایید بنویس: تایید {chat_id}\n"
+                                   f"یا در صورت نیاز به اصلاح بنویس: اصلاح {chat_id} <دلیل>")
+        bot.send_message(chat_id, "✅ اطلاعات شما ارسال شد و در انتظار بررسی ادمین است.")
         return
 
 # ---------------- اجرای همزمان ----------------
