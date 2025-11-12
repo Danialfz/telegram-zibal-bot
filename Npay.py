@@ -295,16 +295,33 @@ def general_handler(m):
                     data = res.json()
                     # گزارش برای ادمین
                     bot.send_message(ADMIN_ID, f"🧾 Zibal request: callbackUrl={callback_url}\nrequest={req}\nresponse={data}")
-                    if data.get("result") == 100:
-                        track_id = data["trackId"]
-                        pay_link = f"https://gateway.zibal.ir/start/{track_id}"
-                        # ارسال لینک قابل کلیک به کاربر (HTML)
-                        bot.send_message(uid,
-                                         "✅ اطلاعات شما تایید شد.\n\n"
-                                         f"💳 <a href=\"{pay_link}\">برای پرداخت کلیک کنید</a>",
-                                         parse_mode="HTML",
-                                         disable_web_page_preview=True)
-                        bot.send_message(ADMIN_ID, f"💰 لینک پرداخت برای کاربر {uid} ارسال شد.")
+                    direction = pending[uid].get("direction")
+
+# اگر جهت از خارج به داخل است → بدون لینک پرداخت
+if direction == "از خارج به داخل":
+    bot.send_message(
+        uid,
+        "✅ اطلاعات شما تایید شد.\n\n"
+        "💵 لطفاً مبلغ مورد نظر را به حساب زیر واریز کنید:\n\n"
+        "🏦 بانک: ملت\n"
+        "💳 شماره کارت: 6104-3371-****-****\n"
+        "👤 به نام: شرکت نوسان پی\n\n"
+        "پس از واریز، رسید یا تأیید پرداخت را برای پشتیبانی ارسال کنید 🙏",
+        parse_mode="HTML"
+    )
+    bot.send_message(ADMIN_ID, f"📨 اطلاعات تایید شد برای کاربر {uid} (از خارج به داخل) — واریز دستی.")
+    return
+
+# در غیر این صورت، یعنی از داخل به خارج → ارسال لینک پرداخت زیبال
+if data.get("result") == 100:
+    track_id = data["trackId"]
+    pay_link = f"https://gateway.zibal.ir/start/{track_id}"
+    bot.send_message(uid,
+                     "✅ اطلاعات شما تایید شد.\n\n"
+                     f"💳 <a href=\"{pay_link}\">برای پرداخت کلیک کنید</a>",
+                     parse_mode="HTML",
+                     disable_web_page_preview=True)
+    bot.send_message(ADMIN_ID, f"💰 لینک پرداخت برای کاربر {uid} ارسال شد.")
                     else:
                         bot.send_message(ADMIN_ID, f"❌ خطا در ساخت لینک پرداخت: {data}")
                         if data.get("result") == 106:
@@ -418,4 +435,5 @@ if __name__ == "__main__":
     print("✅ Npay bot started")
     threading.Thread(target=run_flask).start()
     run_bot()
+
 
