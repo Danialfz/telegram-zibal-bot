@@ -1,4 +1,4 @@
-# =============== Npay.py (ورژن نهایی و سازگار با زیبال و Railway) ===============
+# =============== Npay.py (ورژن نهایی و تست‌شده برای Zibal + Railway + دامنه اختصاصی) ===============
 import os
 import re
 import telebot
@@ -10,8 +10,8 @@ import threading
 # ====================== تنظیمات اصلی ======================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "1611406302"))
-MERCHANT = os.getenv("MERCHANT")
-RAILWAY_DOMAIN = os.getenv("RAILWAY_DOMAIN")  # مقدار: bot.navasanpay.com
+MERCHANT = os.getenv("MERCHANT")  # مرچنت زیبال
+RAILWAY_DOMAIN = os.getenv("RAILWAY_DOMAIN", "bot.navasanpay.com")  # دامنه تنظیم شده در DNS
 
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
@@ -63,7 +63,7 @@ last_target_for_admin = None
 @app.route("/pay/<int:user_id>/<int:amount>")
 def pay(user_id, amount):
     try:
-        # ✅ استفاده از دامنه‌ی navasanpay.com برای جلوگیری از خطای 106
+        # ✅ زیبال فقط HTTPS واقعی قبول می‌کند
         callback_url = f"https://{RAILWAY_DOMAIN}/verify/{user_id}"
 
         req = {
@@ -73,7 +73,7 @@ def pay(user_id, amount):
             "description": f"پرداخت {amount:,} تومان از طریق ربات نوسان‌پی"
         }
 
-        res = requests.post("https://gateway.zibal.ir/v1/request", json=req, timeout=10)
+        res = requests.post("https://gateway.zibal.ir/v1/request", json=req, timeout=15)
         data = res.json()
 
         if data.get("result") == 100:
@@ -82,6 +82,8 @@ def pay(user_id, amount):
         else:
             return jsonify({"error": f"❌ خطا از زیبال: {data}"}), 400
 
+    except requests.exceptions.Timeout:
+        return jsonify({"error": "⏱ ارتباط با سرور زیبال طولانی شد، لطفاً دوباره امتحان کنید."}), 504
     except Exception as e:
         return jsonify({"error": f"⚠️ خطا در ساخت لینک پرداخت: {str(e)}"}), 500
 
@@ -92,10 +94,10 @@ def verify_payment(user_id):
     try:
         track_id = request.args.get("trackId")
         if not track_id:
-            return "پارامتر trackId ارسال نشده."
+            return "پارامتر trackId ارسال نشده است."
 
         req = {"merchant": MERCHANT, "trackId": track_id}
-        res = requests.post("https://gateway.zibal.ir/v1/verify", json=req, timeout=10)
+        res = requests.post("https://gateway.zibal.ir/v1/verify", json=req, timeout=15)
         data = res.json()
 
         if data.get("result") == 100:
@@ -106,22 +108,27 @@ def verify_payment(user_id):
             bot.send_message(user_id, "❌ پرداخت ناموفق بود یا لغو شد.")
             return f"❌ پرداخت ناموفق: {data}"
 
+    except requests.exceptions.Timeout:
+        return "⏱ ارتباط با زیبال برقرار نشد، لطفاً دوباره بررسی کنید."
     except Exception as e:
         return f"⚠️ خطا در بررسی پرداخت: {str(e)}"
 
 
-# ====================== منو و سایر بخش‌ها ======================
+# ====================== منوی اصلی ======================
 def main_menu():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("💸 انتقال ارز")
     return kb
 
+
 # ====================== اجرای همزمان Flask و Bot ======================
 def run_flask():
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+    # Railway پورت را خودش تعیین می‌کند
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
 
 def run_bot():
     bot.infinity_polling(timeout=60, long_polling_timeout=30)
+
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
