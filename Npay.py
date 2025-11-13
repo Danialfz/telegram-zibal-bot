@@ -70,7 +70,7 @@ def main_menu():
 
 def direction_menu():
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("🌍 از داخل به خارج", "🏦 از خارج به داخل")
+    kb.add("🟢 خرید", "🔴 فروش")
     kb.add("🔙 بازگشت")
     return kb
 
@@ -132,9 +132,9 @@ def start(m):
 def start_transfer(m):
     bot.send_message(m.chat.id, "جهت انتقال را انتخاب کنید:", reply_markup=direction_menu())
 
-@bot.message_handler(func=lambda m: m.text in ["🌍 از داخل به خارج", "🏦 از خارج به داخل"])
+@bot.message_handler(func=lambda m: m.text in ["🟢 خرید", "🔴 فروش"])
 def choose_currency(m):
-    direction = "از داخل به خارج" if "داخل به خارج" in m.text else "از خارج به داخل"
+    direction = "خرید" if "خرید" in m.text else "فروش"
     pending[m.chat.id] = {"direction": direction, "step": "currency"}
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     for c, n in currencies.items():
@@ -189,7 +189,7 @@ def main_handler(m):
             total = data.get("total", 0)
             direction = data.get("direction")
 
-            if direction == "از داخل به خارج":
+            if direction == "خرید":
                 rial_total = int(total * 10)
                 callback_url = f"https://{RAILWAY_DOMAIN}/verify/{uid}"
                 req = {"merchant": MERCHANT, "amount": rial_total, "callbackUrl": callback_url,
@@ -205,10 +205,10 @@ def main_handler(m):
                     bot.send_message(ADMIN_ID, f"❌ خطا از زیبال: {d}")
                 return
 
-            elif direction == "از خارج به داخل":
+            elif direction == "فروش":
                 bot.send_message(uid, "✅ اطلاعات تایید شد.\n\n💬 منتظر پیام پشتیبانی باشید تا اطلاعات واریز برای شما ارسال شود.")
                 bot.send_message(ADMIN_ID,
-                                 f"📦 کاربر {uid} مسیر از خارج به داخل را تایید کرد.\n"
+                                 f"📦 کاربر {uid} مسیر فروش را تایید کرد.\n"
                                  f"لطفاً اطلاعات حساب دریافت وجه را برای او ارسال کنید.\n"
                                  f"(هر متنی بفرستید برای او فوروارد می‌شود.)")
                 pending[uid]["step"] = "awaiting_manual_payment"
@@ -256,7 +256,7 @@ def main_handler(m):
     if step == "confirm":
         if text in ("✅ تایید", "تایید", "بله"):
             st["step"] = "awaiting_info"
-            if st["direction"] == "از داخل به خارج":
+            if st["direction"] == "خرید":
                 info_text = currency_info_template.get(st["currency"], "👤 اطلاعات گیرنده را وارد کنید:")
             else:
                 info_text = "👤 لطفاً اطلاعات فرستنده را وارد کنید (نام و شماره حساب در خارج از کشور)"
